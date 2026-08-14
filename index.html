@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NTU AI Society - Digital Card</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center justify-center p-4 selection:bg-cyan-500 selection:text-white">
+
+  <!-- 背景光暈 -->
+  <div class="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-lg h-96 bg-gradient-to-tr from-purple-600/20 to-cyan-500/20 blur-3xl pointer-events-none rounded-full"></div>
+
+  <!-- 主要容器 -->
+  <div id="app" class="w-full max-w-md bg-slate-900/90 backdrop-blur-xl border border-slate-800 rounded-3xl p-6 shadow-2xl relative z-10 my-8">
+    <div id="loading" class="text-center py-10">
+      <p class="text-slate-400 animate-pulse">載入名片資料中...</p>
+    </div>
+    <div id="content" class="hidden"></div>
+  </div>
+
+  <script>
+    // ⚠️ 1. 請填入 Supabase 資訊
+    const SUPABASE_URL = 'https://hhxwldpwoiegjosjpgla.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhoeHdsZHB3b2llZ2pvc2pwZ2xhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2OTY5NjEsImV4cCI6MjEwMjI3Mjk2MX0.bsEDol7G951_VPwp5gxq7ItNtyhPLLjcUAopbvNkvC8';
+
+    // ⚠️ 2. 請填入 Google Gemini API Key (可至 https://aistudio.google.com/ 免費申請)
+    const GEMINI_API_KEY = 'AQ.Ab8RN6Jep89C77IY6ccqm6tvNSmJ6MiDLbgs5_SlIGWx02pogQ';
+
+    let supabaseClient;
+    let currentAvatarSeed = 'ntu-ai';
+
+    async function init() {
+      try {
+        if (window.supabase) {
+          supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        } else {
+          throw new Error("Supabase 套件載入失敗");
+        }
+
+        const pathSegments = window.location.pathname.split('/');
+        const cardId = pathSegments[pathSegments.length - 1] || '001';
+
+        const { data } = await supabaseClient
+          .from('cards')
+          .select('*')
+          .eq('card_id', cardId)
+          .maybeSingle();
+
+        document.getElementById('loading').classList.add('hidden');
+        const contentDiv = document.getElementById('content');
+        contentDiv.classList.remove('hidden');
+
+        if (data && data.is_active) {
+          renderCard(data, contentDiv);
+        } else {
+          renderForm(cardId, contentDiv);
+        }
+      } catch (err) {
+        document.getElementById('loading').innerHTML = `<p class="text-red-400 text-sm text-center">發生錯誤：${err.message}</p>`;
+      }
+    }
+
+    // 渲染「填寫表單頁」
+    function renderForm(id, container) {
+      currentAvatarSeed = `ntu-${id}-${Date.now().toString().slice(-4)}`;
+      const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${currentAvatarSeed}`;
+
+      container.innerHTML = `
+        <header class="text-center mb-6">
+          <span class="text-xs text-cyan-400 bg-slate-800 border border-slate-700 px-3 py-1 rounded-full font-mono">NTU AI Society</span>
+          <h1 class="text-2xl font-bold mt-3 text-white">Create Digital Card</h1>
+          <p class="text-xs text-slate-400 mt-1">正在綁定卡片：<span class="text-purple-400 font-bold">#${id}</span></p>
+        </header>
+        
+        <form onsubmit="saveCard(event)" class="space-y-4">
+          
+          <!-- Avatar 隨機風格頭像 -->
+          <div class="flex flex-col items-center justify-center mb-4">
+            <div class="relative w-20 h-20 rounded-2xl bg-slate-800 border border-slate-700 p-1 mb-2 shadow-inner">
+              <img id="avatarPreview" src="${avatarUrl}" class="w-full h-full object-cover rounded-xl" alt="Avatar">
+            </div>
+            <button type="button" onclick="randomizeAvatar()" class="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-700">
+              <i data-lucide="refresh-cw" class="w-3 h-3"></i> 🎲 換一個風格頭像
+            </button>
+          </div>
+
+          <!-- 身份選擇 -->
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">目前身份 *</label>
+            <select id="user_role" onchange="toggleRoleFields()" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+              <option value="student">在校學生 (Student)</option>
+              <option value="working">職場人士 / 實習生 (Professional / Intern)</option>
+              <option value="other">其他 (Other)</option>
+            </select>
+          </div>
+
+          <!-- 基本資料 -->
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">中文姓名 *</label>
+              <input type="text" id="name_zh" required placeholder="王小明" oninput="updateAvatarSeed()" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">英文姓名</label>
+              <input type="text" id="name_en" placeholder="Alex Wang" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">學校 / 單位 *</label>
+              <input type="text" id="school" value="國立臺灣大學" required class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">系所 / 部門</label>
+              <input type="text" id="department" placeholder="資工系 R12" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">社團職位 / 身份</label>
+            <input type="text" id="title" placeholder="AI 社社員 / 技術部部長" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+          </div>
+
+          <!-- 經歷與技能擴充區塊 -->
+          <div class="space-y-3 pt-1">
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">最新實習 / 工作經歷</label>
+              <input type="text" id="experience" placeholder="例：台積電 軟體實習生 / 研華科技 PM" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">專業技能 / 興趣標籤 (用逗號分開)</label>
+              <input type="text" id="skills" placeholder="例：Python, LLM Prompting, UI/UX, 數據分析" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            </div>
+          </div>
+
+          <!-- 社群連結 -->
+          <div class="space-y-2 pt-2">
+            <label class="block text-xs font-medium text-slate-400 uppercase tracking-wider">社群連結</label>
+            <input type="text" id="instagram" placeholder="Instagram 帳號 (例: ntu.ai)" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            <input type="url" id="linkedin" placeholder="LinkedIn 個人頁面網址" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            <input type="text" id="github" placeholder="GitHub 帳號" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            <input type="url" id="portfolio" placeholder="個人作品集 / Blog 網址" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+          </div>
+
+          <!-- AI 自介區塊 -->
+          <div class="pt-2">
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs font-medium text-slate-300">About Me</label>
+              <button type="button" onclick="generateGeminiBio()" class="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-semibold">
+                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                <span>✨ 真·AI 幫我生成</span>
+              </button>
+            </div>
+            <textarea id="bio" rows="3" placeholder="簡短介紹一下你自己，或是填好上方資訊後點擊『✨ 真·AI 幫我生成』..." class="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-purple-500 resize-none"></textarea>
+          </div>
+
+          <button type="submit" id="submitBtn" class="w-full py-3.5 bg-gradient-to-r from-cyan-500 via-indigo-500 to-purple-600 hover:opacity-90 text-white font-bold rounded-xl shadow-lg mt-4 transition-all">
+            建立我的電子名片
+          </button>
+        </form>
+      `;
+      lucide.createIcons();
+    }
+
+    // 隨機切換 Avatar 風格
+    function randomizeAvatar() {
+      currentAvatarSeed = `seed-${Math.random().toString(36).substring(7)}`;
+      document.getElementById('avatarPreview').src = `https://api.dicebear.com/7.x/bottts/svg?seed=${currentAvatarSeed}`;
+    }
+
+    function updateAvatarSeed() {
+      const name = document.getElementById('name_zh').value;
+      if (name.trim()) {
+        currentAvatarSeed = name;
+        document.getElementById('avatarPreview').src = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`;
+      }
+    }
+
+    // 🤖 真實呼叫 Google Gemini API 生成個人介紹
+    async function generateGeminiBio() {
+      const bioInput = document.getElementById('bio');
+      const name = document.getElementById('name_zh').value || '社員';
+      const school = document.getElementById('school').value || '國立臺灣大學';
+      const dept = document.getElementById('department').value || '';
+      const title = document.getElementById('title').value || '';
+      const exp = document.getElementById('experience').value || '';
+      const skills = document.getElementById('skills').value || '';
+
+      bioInput.value = "🤖 Gemini AI 正在思考專屬你的自介中...";
+
+      // 如果使用者有設定 GEMINI_API_KEY，直接呼叫 Gemini 2.5 Flash API
+      if (GEMINI_API_KEY && GEMINI_API_KEY !== 'YOUR_GEMINI_API_KEY') {
+        try {
+          const prompt = `請以第一人稱「我」寫一段親切、具科技感且專業的個人簡介（約 60-90 字），適合放電子名片。
+          個人背景：
+          - 姓名：${name}
+          - 學校/單位：${school} ${dept}
+          - 社團/身份：${title}
+          - 實習/工作經歷：${exp}
+          - 專長技能/興趣：${skills}
+          請直接給出最終生成的自我介紹文字，不要輸出多餘的說明。`;
+
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }]
+            })
+          });
+
+          const data = await response.json();
+          if (data.candidates && data.candidates[0].content.parts[0].text) {
+            bioInput.value = data.candidates[0].content.parts[0].text.trim();
+            return;
+          }
+        } catch (e) {
+          console.error("Gemini API Error:", e);
+        }
+      }
+
+      // 備用模擬邏輯 (未填寫 API Key 時使用)
+      setTimeout(() => {
+        let text = `👋 嗨！我是 ${name}，目前在 ${school} ${dept} 學習。`;
+        if (title) text += ` 在台大 AI 社擔任 ${title}。`;
+        if (exp) text += ` 近期有 ${exp} 的經歷。`;
+        if (skills) text += ` 熱衷於 ${skills} 等領域。`;
+        text += ` 歡迎交流與認識！🚀`;
+        bioInput.value = text;
+      }, 800);
+    }
+
+    // 渲染「電子名片展示頁」
+    function renderCard(data, container) {
+      const avatarUrl = data.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(data.name_zh || 'ntu')}`;
+      const skillsArray = data.skills ? data.skills.split(',').map(s => s.trim()) : [];
+
+      container.innerHTML = `
+        <div class="text-center py-2">
+          
+          <!-- Avatar 頭像展示 -->
+          <div class="w-20 h-20 mx-auto rounded-2xl bg-slate-800 border-2 border-cyan-400 p-1 mb-3 shadow-lg shadow-cyan-500/20">
+            <img src="${avatarUrl}" class="w-full h-full object-cover rounded-xl" alt="Avatar">
+          </div>
+
+          <h1 class="text-2xl font-bold text-white">${data.name_zh} <span class="text-sm font-normal text-slate-400 block sm:inline">${data.name_en || ''}</span></h1>
+          <p class="text-cyan-400 text-sm font-medium mt-1">${data.school} ${data.department || ''}</p>
+          <p class="text-slate-400 text-xs mt-0.5">${data.title || ''}</p>
+          
+          ${data.experience ? `
+            <div class="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-xs text-indigo-300">
+              <i data-lucide="briefcase" class="w-3.5 h-3.5"></i>
+              <span>${data.experience}</span>
+            </div>
+          ` : ''}
+
+          <!-- About Me -->
+          <div class="mt-5 p-4 bg-slate-800/50 border border-slate-700/50 rounded-2xl text-left">
+            <p class="text-xs font-semibold text-slate-400 mb-1">About Me</p>
+            <p class="text-slate-200 text-sm leading-relaxed">${data.bio || '這個人很懶，還沒寫自我介紹～'}</p>
+          </div>
+
+          <!-- 技能標籤 (Skills Tag) -->
+          ${skillsArray.length > 0 ? `
+            <div class="mt-4 text-left">
+              <p class="text-xs font-semibold text-slate-400 mb-2">Skills & Interests</p>
+              <div class="flex flex-wrap gap-1.5">
+                ${skillsArray.map(skill => `<span class="px-2.5 py-1 bg-cyan-950/60 border border-cyan-800/50 text-cyan-300 rounded-lg text-xs font-mono">${skill}</span>`).join('')}
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- 社群連結按鈕 -->
+          <div class="mt-6 flex justify-center items-center gap-3">
+            ${data.instagram ? `<a href="https://instagram.com/${data.instagram}" target="_blank" class="p-3 bg-slate-800 border border-slate-700 rounded-xl text-pink-400 hover:scale-105 transition-transform"><i data-lucide="instagram" class="w-5 h-5"></i></a>` : ''}
+            ${data.linkedin ? `<a href="${data.linkedin}" target="_blank" class="p-3 bg-slate-800 border border-slate-700 rounded-xl text-blue-400 hover:scale-105 transition-transform"><i data-lucide="linkedin" class="w-5 h-5"></i></a>` : ''}
+            ${data.github ? `<a href="https://github.com/${data.github}" target="_blank" class="p-3 bg-slate-800 border border-slate-700 rounded-xl text-slate-200 hover:scale-105 transition-transform"><i data-lucide="github" class="w-5 h-5"></i></a>` : ''}
+            ${data.portfolio ? `<a href="${data.portfolio}" target="_blank" class="p-3 bg-slate-800 border border-slate-700 rounded-xl text-cyan-400 hover:scale-105 transition-transform"><i data-lucide="globe" class="w-5 h-5"></i></a>` : ''}
+          </div>
+
+          <p class="text-[10px] text-slate-500 mt-8">NTU AI Society NFC Digital Card</p>
+        </div>
+      `;
+      lucide.createIcons();
+    }
+
+    // 儲存至 Supabase 資料庫
+    async function saveCard(e) {
+      e.preventDefault();
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.innerText = '儲存中...';
+      submitBtn.disabled = true;
+
+      const pathSegments = window.location.pathname.split('/');
+      const cardId = pathSegments[pathSegments.length - 1] || '001';
+
+      const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(currentAvatarSeed)}`;
+
+      const cardData = {
+        card_id: cardId,
+        is_active: true,
+        name_zh: document.getElementById('name_zh').value,
+        name_en: document.getElementById('name_en').value,
+        school: document.getElementById('school').value,
+        department: document.getElementById('department').value,
+        title: document.getElementById('title').value,
+        experience: document.getElementById('experience').value,
+        skills: document.getElementById('skills').value,
+        instagram: document.getElementById('instagram').value,
+        linkedin: document.getElementById('linkedin').value,
+        github: document.getElementById('github').value,
+        portfolio: document.getElementById('portfolio').value,
+        bio: document.getElementById('bio').value,
+        avatar_url: avatarUrl
+      };
+
+      const { error } = await supabaseClient.from('cards').upsert(cardData);
+      if (error) {
+        alert('儲存失敗：' + error.message);
+        submitBtn.innerText = '建立我的電子名片';
+        submitBtn.disabled = false;
+      } else {
+        alert('🎉 名片設定成功！');
+        location.reload();
+      }
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>
