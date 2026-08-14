@@ -1,0 +1,10 @@
+**{**
+
+&#x20; **"rewrites": \[**
+
+&#x20;   **{ "source": "/c/:path\*", "destination": "/index.html" }**
+
+&#x20; **]**
+
+**}**
+
