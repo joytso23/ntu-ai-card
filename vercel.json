@@ -1,10 +1,7 @@
-**{**
-
-&#x20; **"rewrites": \[**
-
-&#x20;   **{ "source": "/c/:path\*", "destination": "/index.html" }**
-
-&#x20; **]**
-
-**}**
+{
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
 
