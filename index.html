@@ -44,9 +44,15 @@
           console.warn("Supabase 尚未正確設定，將使用展示模式");
         }
 
-        const pathSegments = window.location.pathname.split('/');
-        let cardId = pathSegments[pathSegments.length - 1] || '001';
-        if (!cardId || cardId === 'c' || cardId === '') cardId = '001';
+// 新版解析邏輯：優先從 404 重定向參數抓取，次之從網址路徑抓取
+const urlParams = new URLSearchParams(window.location.search);
+const redirectPath = urlParams.get('p');
+
+let path = redirectPath ? redirectPath : window.location.pathname;
+let pathSegments = path.split('/').filter(Boolean);
+
+let cardId = pathSegments[pathSegments.length - 1] || '001';
+if (cardId === 'c' || !cardId) cardId = '001';
 
         let cardData = null;
 
