@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <script>
+    // 自動將所有 404 路徑帶回首頁 index.html，並保留原本的網址路徑
+    window.location.href = "/?p=" + encodeURIComponent(window.location.pathname);
+  </script>
+</head>
+<body>
+</body>
+</html>
