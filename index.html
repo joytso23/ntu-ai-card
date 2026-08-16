@@ -1,408 +1,527 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-TW" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>電子名片系統 (全加密版)</title>
-  <!-- Tailwind CSS CDN -->
+  <title>NTU AI Society - Personal Bio Website</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Supabase JS Client -->
+  <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- CryptoJS (AES & SHA256) -->
+  <!-- 引入加密庫 CryptoJS -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-  <!-- FontAwesome 圖示 -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @keyframes glowPulse {
+      0%, 100% { opacity: 0.35; transform: scale(1); }
+      50% { opacity: 0.65; transform: scale(1.08); }
+    }
+    .animate-glow { animation: glowPulse 7s infinite ease-in-out; }
+    .block-card {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .block-card:hover {
+      border-color: rgba(6, 182, 212, 0.6);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px -5px rgba(6, 182, 212, 0.15);
+    }
+  </style>
 </head>
-<body class="bg-slate-100 min-h-screen py-8 px-4 font-sans text-slate-800">
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center justify-center p-4 selection:bg-cyan-500 selection:text-white relative overflow-x-hidden">
 
-  <div class="max-w-2xl mx-auto space-y-8">
-    
-    <!-- 標頭 -->
-    <header class="text-center">
-      <h1 class="text-3xl font-bold text-slate-900 mb-2">個人電子名片系統</h1>
-      <p class="text-sm text-slate-500">端到端全欄位 AES 加密防護，資料庫亦無法解密內容</p>
-    </header>
+  <div class="fixed top-[-10%] left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-gradient-to-tr from-indigo-900/40 via-purple-900/30 to-cyan-500/20 blur-[120px] pointer-events-none rounded-full animate-glow"></div>
 
-    <!-- 表單卡片：建立 / 編輯電子名片 -->
-    <div id="formContainer" class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
-      <div class="flex justify-between items-center mb-6 border-b pb-3">
-        <h2 id="formTitle" class="text-xl font-bold text-slate-800">建立個人名片</h2>
-        <span id="editBadge" class="hidden bg-amber-100 text-amber-800 text-xs px-2.5 py-0.5 rounded-full font-medium">編輯模式</span>
-      </div>
-
-      <form id="cardForm" onsubmit="handleFormSubmit(event)" class="space-y-4">
-        
-        <!-- 隱藏的名片 ID (編輯時使用) -->
-        <input type="hidden" id="cardId" value="">
-
-        <!-- 基本資料 -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-xs font-semibold text-slate-600 mb-1">姓名 *</label>
-            <input type="text" id="name" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm">
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-slate-600 mb-1">Email *</label>
-            <input type="email" id="email" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm">
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-slate-600 mb-1">學校</label>
-            <input type="text" id="school" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm">
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-slate-600 mb-1">科系</label>
-            <input type="text" id="dept" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm">
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-slate-600 mb-1">現職/頭銜</label>
-            <input type="text" id="title" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm">
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-slate-600 mb-1">專業技能 (逗號分隔)</label>
-            <input type="text" id="skills" placeholder="例如: UI/UX, Python, React" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm">
-          </div>
-        </div>
-
-        <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">經歷簡述</label>
-          <textarea id="exp" rows="2" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"></textarea>
-        </div>
-
-        <!-- 自我介紹區塊 + Gemini AI 自動生成 -->
-        <div>
-          <div class="flex justify-between items-center mb-1">
-            <label class="block text-xs font-semibold text-slate-600">自我介紹 (Bio)</label>
-            <button type="button" onclick="generateGeminiBio()" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1">
-              <i class="fa-solid fa-wand-magic-sparkles"></i> AI 協助寫簡介
-            </button>
-          </div>
-          <textarea id="bio" rows="3" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"></textarea>
-        </div>
-
-        <!-- PIN 碼驗證與金鑰 -->
-        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
-          <label class="block text-xs font-bold text-slate-700 mb-1">設定/輸入 PIN 碼 (4-8位數) *</label>
-          <p class="text-xs text-slate-500 mb-2">PIN 碼將作為加密內容的唯一金鑰，資料庫不會儲存原始 PIN 碼。後續編輯或解密皆需此 PIN 碼。</p>
-          <input type="password" id="pin" required maxlength="8" placeholder="請輸入安全 PIN 碼" class="w-full md:w-1/2 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm font-mono">
-        </div>
-
-        <!-- 按鈕區 -->
-        <div class="flex gap-3 pt-2">
-          <button type="submit" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg text-sm transition">
-            儲存加密名片
-          </button>
-          <button type="button" id="cancelEditBtn" onclick="resetForm()" class="hidden bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-2 px-4 rounded-lg text-sm transition">
-            取消編輯
-          </button>
-        </div>
-
-      </form>
+  <div id="app" class="w-full max-w-md bg-slate-900/80 backdrop-blur-2xl border border-indigo-500/20 rounded-[2.5rem] p-6 shadow-2xl relative z-10 my-6">
+    <div id="loading" class="text-center py-16">
+      <div class="w-10 h-10 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+      <p class="text-slate-400 font-mono text-xs tracking-widest animate-pulse">LOADING SECURE PORTFOLIO...</p>
     </div>
-
-    <!-- 檢視卡片區塊 -->
-    <div id="cardDisplay" class="hidden bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
-      
-      <!-- 頂部防護狀態條 -->
-      <div class="bg-slate-800 text-white px-6 py-3 flex justify-between items-center text-xs">
-        <span class="flex items-center gap-2">
-          <i class="fa-solid fa-lock text-emerald-400"></i> 端到端全加密狀態
-        </span>
-        <span id="lockStatusText" class="text-slate-400">尚未解密</span>
-      </div>
-
-      <!-- 名片內容區 -->
-      <div class="p-6 space-y-6">
-        
-        <div class="flex justify-between items-start border-b pb-4">
-          <div>
-            <h3 id="displayHeaderName" class="text-2xl font-bold text-slate-900">[加密資料]</h3>
-            <p id="displayHeaderTitle" class="text-sm text-slate-600">[加密資料]</p>
-          </div>
-          <div class="space-x-2">
-            <button onclick="promptDecrypt()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-md transition">
-              <i class="fa-solid fa-key mr-1"></i> 輸入 PIN 解密
-            </button>
-            <button onclick="promptEdit()" class="bg-amber-500 hover:bg-amber-600 text-white text-xs px-3 py-1.5 rounded-md transition">
-              <i class="fa-solid fa-pen-to-square mr-1"></i> 編輯名片
-            </button>
-          </div>
-        </div>
-
-        <!-- 名片明細列表 -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-          <div>
-            <span class="block text-xs font-semibold text-slate-400">Email</span>
-            <p id="displayEmail" class="font-mono text-slate-700 break-all">[加密資料]</p>
-          </div>
-          <div>
-            <span class="block text-xs font-semibold text-slate-400">學歷/單位</span>
-            <p id="displaySchoolDept" class="text-slate-700">[加密資料]</p>
-          </div>
-          <div class="md:col-span-2">
-            <span class="block text-xs font-semibold text-slate-400">專業技能</span>
-            <div id="displaySkills" class="flex flex-wrap gap-1 mt-1">
-              <span class="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded">[加密資料]</span>
-            </div>
-          </div>
-          <div class="md:col-span-2">
-            <span class="block text-xs font-semibold text-slate-400">經歷簡述</span>
-            <p id="displayExp" class="text-slate-700 whitespace-pre-line">[加密資料]</p>
-          </div>
-          <div class="md:col-span-2">
-            <span class="block text-xs font-semibold text-slate-400">個人簡介 (Bio)</span>
-            <p id="displayBio" class="text-slate-700 whitespace-pre-line">[加密資料]</p>
-          </div>
-        </div>
-
-      </div>
-    </div>
-
+    <div id="content" class="hidden"></div>
   </div>
 
   <script>
-    // ==========================================
-    // 1. 初始化 Supabase 設定
-    // ==========================================
-    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; // 請替換為你的 Supabase URL
-    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; // 請替換為你的 Supabase Anon Key
-    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const SUPABASE_URL = 'https://hhxwldpwoiegjosjpgla.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhoeHdsZHB3b2llZ2pvc2pwZ2xhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2OTY5NjEsImV4cCI6MjEwMjI3Mjk2MX0.bsEDol7G951_VPwp5gxq7ItNtyhPLLjcUAopbvNkvC8';
 
-    // 全域變數用於儲存目前讀取的加密名片 Raw Data
-    let currentRawCard = null;
+    let supabaseClient = null;
+    let currentAvatarSeed = 'ntu-ai';
+    let currentCardData = null;
 
-    // ==========================================
-    // 2. 加密與解密工具函式 (CryptoJS)
-    // ==========================================
-    
-    // AES 加密 (使用 PIN 碼作為 Key)
-    function encryptText(plainText, key) {
-      if (!plainText) return '';
-      return CryptoJS.AES.encrypt(plainText.trim(), key).toString();
+    // AES 加密與解密工具
+    function encryptData(text, key) {
+      if (!text) return '';
+      return CryptoJS.AES.encrypt(text, key).toString();
     }
 
-    // AES 解密
-    function decryptText(cipherText, key) {
-      if (!cipherText) return '';
+    function decryptData(ciphertext, key) {
+      if (!ciphertext) return '';
       try {
-        const bytes = CryptoJS.AES.decrypt(cipherText, key);
-        const originalText = bytes.toString(CryptoJS.enc.Utf8);
-        return originalText || null;
+        const bytes = CryptoJS.AES.decrypt(ciphertext, key);
+        const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+        return decrypted;
       } catch (e) {
-        return null;
+        return '';
       }
     }
 
-    // SHA256 雜湊 (用於保護與比對 PIN 碼，不儲存明文)
-    function hashPin(pin) {
-      return CryptoJS.SHA256(pin.trim()).toString();
+    async function init() {
+      const loadingDiv = document.getElementById('loading');
+      const contentDiv = document.getElementById('content');
+
+      try {
+        if (window.supabase && SUPABASE_URL.includes('.supabase.co')) {
+          supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const redirectPath = urlParams.get('p');
+        let path = redirectPath ? redirectPath : window.location.pathname;
+        let pathSegments = path.split('/').filter(Boolean);
+
+        let cardId = pathSegments[pathSegments.length - 1] || '001';
+        if (cardId === 'c' || !cardId) cardId = '001';
+
+        if (supabaseClient) {
+          const { data, error } = await supabaseClient
+            .from('cards')
+            .select('*')
+            .eq('card_id', cardId)
+            .maybeSingle();
+
+          if (!error && data) currentCardData = data;
+        }
+
+        loadingDiv.classList.add('hidden');
+        contentDiv.classList.remove('hidden');
+
+        if (currentCardData && currentCardData.is_active) {
+          renderCardViewPrompt(currentCardData, contentDiv);
+        } else {
+          renderForm(cardId, contentDiv);
+        }
+
+      } catch (err) {
+        console.error("Init Error:", err);
+      }
     }
 
-    // ==========================================
-    // 3. 表單送出 (新增 / 更新加密資料至 Supabase)
-    // ==========================================
-    async function handleFormSubmit(e) {
-      e.preventDefault();
+    // 檢視頁面：需要輸入 PIN 碼解密檢視或進行編輯
+    function renderCardViewPrompt(data, container) {
+      container.innerHTML = `
+        <div class="text-center py-6 space-y-4">
+          <div class="w-16 h-16 rounded-full bg-indigo-950/80 border border-cyan-400/50 flex items-center justify-center mx-auto text-cyan-400">
+            <i data-lucide="lock" class="w-8 h-8"></i>
+          </div>
+          <div>
+            <h2 class="text-lg font-bold text-white">此名片資料已全欄位加密</h2>
+            <p class="text-xs text-slate-400 mt-1">請輸入 PIN 碼解密讀取或編輯名片</p>
+          </div>
+          
+          <div class="space-y-3 pt-2">
+            <input type="password" id="view_pin" placeholder="請輸入 4-8 位 PIN 碼" class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-4 py-2.5 text-center text-sm text-white focus:outline-none focus:border-cyan-400 font-mono">
+            
+            <div class="flex gap-2">
+              <button onclick="unlockAndRenderCard()" class="flex-1 py-2.5 bg-gradient-to-r from-indigo-600 to-cyan-600 hover:opacity-90 text-white font-bold text-xs rounded-xl transition-all">
+                🔓 解密查看名片
+              </button>
+              <button onclick="unlockAndEditCard()" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1">
+                <i data-lucide="edit-3" class="w-3.5 h-3.5"></i> 編輯名片
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      if (window.lucide) lucide.createIcons();
+    }
 
-      const cardId = document.getElementById('cardId').value;
-      const pin = document.getElementById('pin').value.trim();
-
-      if (!pin || pin.length < 4) {
-        alert('請設定至少 4 位數的 PIN 碼！');
+    function unlockAndRenderCard() {
+      const pin = document.getElementById('view_pin').value;
+      if (!pin) {
+        alert('請輸入 PIN 碼！');
+        return;
+      }
+      
+      const decryptedName = decryptData(currentCardData.name_zh, pin);
+      if (!decryptedName) {
+        alert('PIN 碼錯誤或無法解密！');
         return;
       }
 
-      const pinHash = hashPin(pin);
+      renderCard(currentCardData, pin, document.getElementById('content'));
+    }
 
-      // 所有的內容在送出前皆經過 AES 加密
-      const payload = {
-        pin_hash: pinHash, // 資料庫僅儲存 PIN 的 Hash 值
-        name: encryptText(document.getElementById('name').value, pin),
-        email: encryptText(document.getElementById('email').value, pin),
-        school: encryptText(document.getElementById('school').value, pin),
-        dept: encryptText(document.getElementById('dept').value, pin),
-        title: encryptText(document.getElementById('title').value, pin),
-        skills: encryptText(document.getElementById('skills').value, pin),
-        exp: encryptText(document.getElementById('exp').value, pin),
-        bio: encryptText(document.getElementById('bio').value, pin)
+    function unlockAndEditCard() {
+      const pin = document.getElementById('view_pin').value;
+      if (!pin) {
+        alert('請輸入 PIN 碼！');
+        return;
+      }
+
+      const decryptedName = decryptData(currentCardData.name_zh, pin);
+      if (!decryptedName) {
+        alert('PIN 碼驗證失敗！無法進行編輯。');
+        return;
+      }
+
+      // 將解密後的資料帶入表單
+      const decryptedData = {
+        card_id: currentCardData.card_id,
+        pin_code: pin,
+        name_zh: decryptedName,
+        name_en: decryptData(currentCardData.name_en, pin),
+        school: decryptData(currentCardData.school, pin),
+        department: decryptData(currentCardData.department, pin),
+        title: decryptData(currentCardData.title, pin),
+        experience: decryptData(currentCardData.experience, pin),
+        skills: decryptData(currentCardData.skills, pin),
+        email: decryptData(currentCardData.email, pin),
+        instagram: decryptData(currentCardData.instagram, pin),
+        linkedin: decryptData(currentCardData.linkedin, pin),
+        github: decryptData(currentCardData.github, pin),
+        portfolio: decryptData(currentCardData.portfolio, pin),
+        bio: decryptData(currentCardData.bio, pin),
+        avatar_url: decryptData(currentCardData.avatar_url, pin)
       };
 
-      let result;
+      renderForm(currentCardData.card_id, document.getElementById('content'), decryptedData);
+    }
 
-      if (cardId) {
-        // 更新模式
-        result = await supabase.from('cards').update(payload).eq('id', cardId).select();
+    function renderForm(id, container, existingData = null) {
+      if (existingData && existingData.avatar_url) {
+        currentAvatarSeed = existingData.avatar_url;
       } else {
-        // 新增模式
-        result = await supabase.from('cards').insert([payload]).select();
+        currentAvatarSeed = `ntu-${id}-${Math.floor(Math.random() * 1000)}`;
       }
 
-      if (result.error) {
-        alert('儲存失敗：' + result.error.message);
-      } else {
-        alert('加密名片儲存成功！');
-        const savedCard = result.data[0];
-        resetForm();
-        renderEncryptedCard(savedCard);
-      }
+      const avatarUrl = currentAvatarSeed.startsWith('http') 
+        ? currentAvatarSeed 
+        : `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(currentAvatarSeed)}`;
+
+      container.innerHTML = `
+        <header class="text-center mb-6 border-b border-indigo-500/20 pb-4">
+          <span class="text-[10px] font-mono tracking-widest text-cyan-400 bg-indigo-950/80 border border-indigo-700/50 px-3 py-1 rounded-full">NTU AI SOCIETY</span>
+          <h1 class="text-xl font-bold mt-3 text-white">${existingData ? '編輯個人網站名片' : '建立個人網站卡片'}</h1>
+          <p class="text-xs text-slate-400 mt-1 font-mono">卡片編號：<span class="text-purple-400 font-bold">#${id}</span></p>
+        </header>
+        
+        <form onsubmit="saveCard(event)" class="space-y-4">
+          
+          <div class="flex flex-col items-center justify-center mb-2">
+            <div class="relative w-20 h-20 rounded-full bg-slate-900 border-2 border-cyan-400 p-1 mb-2 shadow-lg shadow-cyan-500/20">
+              <img id="avatarPreview" src="${avatarUrl}" class="w-full h-full object-cover rounded-full" alt="Avatar">
+            </div>
+            <button type="button" onclick="randomizeAvatar()" class="text-xs text-cyan-300 flex items-center gap-1 bg-indigo-950/80 hover:bg-indigo-900 px-3 py-1 rounded-full border border-indigo-700/50">
+              <i data-lucide="refresh-cw" class="w-3 h-3"></i> 換個頭像
+            </button>
+          </div>
+
+          <!-- 隱私設定：設定密碼 -->
+          <div class="bg-indigo-950/50 border border-indigo-500/30 p-3 rounded-xl space-y-1">
+            <label class="block text-xs font-bold text-cyan-300">🔐 設定個人修改/解密 PIN 碼 *</label>
+            <input type="password" id="pin_code" required value="${existingData?.pin_code || ''}" placeholder="請輸入 4-8 位數字密碼" class="w-full bg-slate-950/80 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-cyan-400 font-mono">
+            <p class="text-[10px] text-slate-400">所有欄位均會使用此 PIN 碼於前端進行 AES 加密儲存。</p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-indigo-200 mb-1">中文姓名 *</label>
+              <input type="text" id="name_zh" required value="${existingData?.name_zh || ''}" placeholder="王小明" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-indigo-200 mb-1">英文姓名</label>
+              <input type="text" id="name_en" value="${existingData?.name_en || ''}" placeholder="Ian Wang" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-indigo-200 mb-1">學校 / 單位 *</label>
+              <input type="text" id="school" value="${existingData?.school || ''}" placeholder="國立臺灣大學" required class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-indigo-200 mb-1">系所 / 部門</label>
+              <input type="text" id="department" value="${existingData?.department || ''}" placeholder="資訊工程學系" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-indigo-200 mb-1">社團職位 / 身份標籤</label>
+            <input type="text" id="title" value="${existingData?.title || ''}" placeholder="專案負責人 / 行銷部長" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+          </div>
+
+          <div class="space-y-3 pt-1">
+            <div>
+              <label class="block text-xs font-medium text-indigo-200 mb-1">重要經歷 / 專案亮點</label>
+              <input type="text" id="experience" value="${existingData?.experience || ''}" placeholder="台積電實習、ATCC 決賽團隊" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-indigo-200 mb-1">專業技能 (逗號分開)</label>
+              <input type="text" id="skills" value="${existingData?.skills || ''}" placeholder="Python, Marketing, FinTech" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            </div>
+          </div>
+
+          <div class="space-y-2 pt-2">
+            <label class="block text-xs font-medium text-indigo-400 uppercase tracking-wider font-mono">聯絡與社群連結 (將加密儲存)</label>
+            <input type="email" id="email" value="${existingData?.email || ''}" placeholder="電子信箱" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            <input type="text" id="instagram" value="${existingData?.instagram || ''}" placeholder="Instagram 帳號" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            <input type="url" id="linkedin" value="${existingData?.linkedin || ''}" placeholder="LinkedIn 個人頁面網址" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            <input type="text" id="github" value="${existingData?.github || ''}" placeholder="GitHub 帳號" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            <input type="url" id="portfolio" value="${existingData?.portfolio || ''}" placeholder="個人作品集 / 官網網址" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+          </div>
+
+          <div class="pt-2">
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs font-medium text-indigo-200">About Me (故事簡介)</label>
+              <button type="button" id="geminiBtn" onclick="generateGeminiBio()" class="text-xs text-cyan-300 font-semibold flex items-center gap-1 bg-gradient-to-r from-indigo-900 to-purple-900 border border-cyan-500/40 px-2.5 py-1 rounded-lg transition-all">
+                <i data-lucide="sparkles" class="w-3.5 h-3.5 text-cyan-400"></i>
+                <span id="geminiBtnText">✨ 依經歷生成</span>
+              </button>
+            </div>
+            <textarea id="bio" rows="3" placeholder="填寫經歷後點擊生成..." class="w-full bg-slate-950/70 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-purple-500 resize-none leading-relaxed">${existingData?.bio || ''}</textarea>
+          </div>
+
+          <button type="submit" id="submitBtn" class="w-full py-3.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-500 hover:opacity-95 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 mt-4 transition-all">
+            🚀 加密並發佈個人網站
+          </button>
+        </form>
+      `;
+      if (window.lucide) lucide.createIcons();
     }
 
-    // ==========================================
-    // 4. 卡片渲染與解密控制
-    // ==========================================
-
-    // 渲染未解密的原始卡片
-    function renderEncryptedCard(cardData) {
-      currentRawCard = cardData;
-      document.getElementById('cardDisplay').classList.remove('hidden');
-
-      document.getElementById('lockStatusText').innerText = '未解密 (全欄位加密中)';
-      document.getElementById('lockStatusText').className = 'text-amber-400';
-
-      document.getElementById('displayHeaderName').innerText = '[密文名片]';
-      document.getElementById('displayHeaderTitle').innerText = cardData.title.substring(0, 15) + '...';
-      document.getElementById('displayEmail').innerText = cardData.email.substring(0, 20) + '...';
-      document.getElementById('displaySchoolDept').innerText = '[密文資料]';
-      document.getElementById('displaySkills').innerHTML = '<span class="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded">[密文資料]</span>';
-      document.getElementById('displayExp').innerText = cardData.exp.substring(0, 30) + '...';
-      document.getElementById('displayBio').innerText = cardData.bio.substring(0, 30) + '...';
+    function randomizeAvatar() {
+      currentAvatarSeed = `seed-${Math.random().toString(36).substring(7)}`;
+      document.getElementById('avatarPreview').src = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(currentAvatarSeed)}`;
     }
 
-    // 跳出 PIN 碼提示進行解密
-    function promptDecrypt() {
-      if (!currentRawCard) return;
-
-      const userPin = prompt('請輸入 PIN 碼解密名片內容：');
-      if (!userPin) return;
-
-      if (hashPin(userPin) !== currentRawCard.pin_hash) {
-        alert('PIN 碼錯誤，無法解密！');
-        return;
-      }
-
-      // 密碼正確，進行解密
-      decryptAndDisplay(userPin);
-    }
-
-    // 執行解密並更新介面
-    function decryptAndDisplay(pin) {
-      const name = decryptText(currentRawCard.name, pin) || '[解密失敗]';
-      const email = decryptText(currentRawCard.email, pin) || '[解密失敗]';
-      const school = decryptText(currentRawCard.school, pin) || '';
-      const dept = decryptText(currentRawCard.dept, pin) || '';
-      const title = decryptText(currentRawCard.title, pin) || '';
-      const skills = decryptText(currentRawCard.skills, pin) || '';
-      const exp = decryptText(currentRawCard.exp, pin) || '';
-      const bio = decryptText(currentRawCard.bio, pin) || '';
-
-      document.getElementById('lockStatusText').innerText = '已解密查看';
-      document.getElementById('lockStatusText').className = 'text-emerald-400';
-
-      document.getElementById('displayHeaderName').innerText = name;
-      document.getElementById('displayHeaderTitle').innerText = title;
-      document.getElementById('displayEmail').innerText = email;
-      document.getElementById('displaySchoolDept').innerText = `${school} ${dept}`.trim() || '未填寫';
-
-      // 技能標籤處理
-      const skillsContainer = document.getElementById('displaySkills');
-      skillsContainer.innerHTML = '';
-      if (skills) {
-        skills.split(',').forEach(s => {
-          if (s.trim()) {
-            const span = document.createElement('span');
-            span.className = 'text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded border border-indigo-100';
-            span.innerText = s.trim();
-            skillsContainer.appendChild(span);
-          }
-        });
-      } else {
-        skillsContainer.innerText = '無';
-      }
-
-      document.getElementById('displayExp').innerText = exp || '無';
-      document.getElementById('displayBio').innerText = bio || '無';
-    }
-
-    // ==========================================
-    // 5. 權限驗證與編輯模式
-    // ==========================================
-
-    // 點擊編輯按鈕：輸入 PIN 驗證後帶入表單
-    function promptEdit() {
-      if (!currentRawCard) return;
-
-      const userPin = prompt('請輸入 PIN 碼以進入編輯模式：');
-      if (!userPin) return;
-
-      if (hashPin(userPin) !== currentRawCard.pin_hash) {
-        alert('PIN 碼不正確，拒絕存取編輯權限！');
-        return;
-      }
-
-      // 解密資料並填入表單
-      document.getElementById('cardId').value = currentRawCard.id;
-      document.getElementById('name').value = decryptText(currentRawCard.name, userPin) || '';
-      document.getElementById('email').value = decryptText(currentRawCard.email, userPin) || '';
-      document.getElementById('school').value = decryptText(currentRawCard.school, userPin) || '';
-      document.getElementById('dept').value = decryptText(currentRawCard.dept, userPin) || '';
-      document.getElementById('title').value = decryptText(currentRawCard.title, userPin) || '';
-      document.getElementById('skills').value = decryptText(currentRawCard.skills, userPin) || '';
-      document.getElementById('exp').value = decryptText(currentRawCard.exp, userPin) || '';
-      document.getElementById('bio').value = decryptText(currentRawCard.bio, userPin) || '';
-      document.getElementById('pin').value = userPin;
-
-      // 切換表單標題與 UI 狀態
-      document.getElementById('formTitle').innerText = '編輯個人名片';
-      document.getElementById('editBadge').classList.remove('hidden');
-      document.getElementById('cancelEditBtn').classList.remove('hidden');
-
-      // 滾動至表單區塊
-      document.getElementById('formContainer').scrollIntoView({ behavior: 'smooth' });
-    }
-
-    // 重設表單至新增模式
-    function resetForm() {
-      document.getElementById('cardForm').reset();
-      document.getElementById('cardId').value = '';
-      document.getElementById('formTitle').innerText = '建立個人名片';
-      document.getElementById('editBadge').classList.add('hidden');
-      document.getElementById('cancelEditBtn').classList.add('hidden');
-    }
-
-    // ==========================================
-    // 6. Gemini AI 簡介自動生成
-    // ==========================================
     async function generateGeminiBio() {
-      const name = document.getElementById('name').value;
-      const title = document.getElementById('title').value;
-      const exp = document.getElementById('exp').value;
-      const skills = document.getElementById('skills').value;
+      const bioInput = document.getElementById('bio');
+      const btn = document.getElementById('geminiBtn');
+      const btnText = document.getElementById('geminiBtnText');
 
-      if (!name) {
-        alert('請先填寫姓名再使用 AI 產生簡介！');
-        return;
-      }
+      const name = document.getElementById('name_zh').value || '社團成員';
+      const school = document.getElementById('school').value || '國立臺灣大學';
+      const dept = document.getElementById('department').value || '';
+      const title = document.getElementById('title').value || '';
+      const exp = document.getElementById('experience').value || '';
+      const skills = document.getElementById('skills').value || '';
 
-      const bioField = document.getElementById('bio');
-      bioField.value = 'AI 正在為您撰寫個人簡介中...';
+      btn.disabled = true;
+      btn.classList.add('opacity-50', 'cursor-not-allowed');
+      btnText.innerText = "生成中...";
+      bioInput.value = "⚡ AI 正在分析你的經歷亮點，撰寫個人故事中...";
 
       try {
         const response = await fetch('/api/generate-bio', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, title, exp, skills })
+          body: JSON.stringify({ name, school, dept, title, exp, skills })
         });
 
-        if (response.ok) {
-          const data = await response.json();
-          bioField.value = data.bio || `我是 ${name}，現任 ${title}，專長包含 ${skills}。歡迎聯繫合作！`;
+        const data = await response.json();
+
+        if (response.ok && data.text) {
+          bioInput.value = data.text.trim();
         } else {
-          throw new Error('後端生成失敗');
+          throw new Error('API request failed');
         }
-      } catch (err) {
-        // 後端 API 未建置時的預設備用生成邏輯
-        bioField.value = `你好！我是 ${name}，目前擔任 ${title || '專業人員'}。擁有 ${skills || '多元專業'} 技能，具備豐富的專案經歷：${exp || '積極創新並持續學習'}。很高興認識大家！`;
+      } catch (e) {
+        let fallbackBio = `我是來自 ${school}${dept ? ' ' + dept : ''} 的 ${name}。`;
+        if (title) fallbackBio += `目前擔任 ${title}。`;
+        if (exp) fallbackBio += `專注於 ${exp} 等領域的實踐與探索，`;
+        if (skills) fallbackBio += `並具備 ${skills} 等核心能力。`;
+        fallbackBio += `熱衷於持續學習與跨領域挑戰，探索更多創新的可能性！`;
+
+        bioInput.value = fallbackBio;
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        btnText.innerText = "✨ 依經歷生成";
       }
     }
+
+    function renderCard(data, pinKey, container) {
+      const name_zh = decryptData(data.name_zh, pinKey);
+      const name_en = decryptData(data.name_en, pinKey);
+      const school = decryptData(data.school, pinKey);
+      const department = decryptData(data.department, pinKey);
+      const title = decryptData(data.title, pinKey);
+      const email = decryptData(data.email, pinKey);
+      const experience = decryptData(data.experience, pinKey);
+      const skills = decryptData(data.skills, pinKey);
+      const instagram = decryptData(data.instagram, pinKey);
+      const linkedin = decryptData(data.linkedin, pinKey);
+      const github = decryptData(data.github, pinKey);
+      const portfolio = decryptData(data.portfolio, pinKey);
+      const bio = decryptData(data.bio, pinKey);
+      
+      const avatarSeed = decryptData(data.avatar_url, pinKey) || name_zh || 'ntu';
+      const avatarUrl = avatarSeed.startsWith('http') 
+        ? avatarSeed 
+        : `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(avatarSeed)}`;
+
+      const skillsArray = skills ? skills.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+      container.innerHTML = `
+        <div class="space-y-5">
+          <div class="flex items-center justify-between border-b border-indigo-500/20 pb-3">
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span class="text-[10px] font-mono text-cyan-400 tracking-widest uppercase">NTU AI PORTFOLIO</span>
+            </div>
+            <span class="text-[10px] font-mono text-slate-500">#${data.card_id}</span>
+          </div>
+
+          <div class="text-center pt-2 pb-2">
+            <div class="relative inline-block mb-3">
+              <div class="absolute -inset-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-cyan-400 rounded-full blur opacity-50"></div>
+              <div class="relative w-24 h-24 rounded-full bg-slate-900 border-2 border-cyan-400/80 p-1 shadow-2xl overflow-hidden mx-auto">
+                <img src="${avatarUrl}" class="w-full h-full object-cover rounded-full" alt="Avatar">
+              </div>
+            </div>
+
+            <h1 class="text-2xl font-black text-white tracking-tight">${name_zh}</h1>
+            ${name_en ? `<p class="text-xs font-mono text-indigo-300 font-medium mt-0.5">${name_en}</p>` : ''}
+            
+            <p class="text-cyan-400 text-xs font-semibold mt-1.5 flex items-center justify-center gap-1">
+              <i data-lucide="graduation-cap" class="w-3.5 h-3.5"></i>
+              <span>${school} ${department || ''}</span>
+            </p>
+
+            ${title ? `<div class="mt-2 inline-block px-3 py-1 rounded-full bg-indigo-950/80 border border-indigo-700/60 text-xs font-medium text-indigo-200">${title}</div>` : ''}
+
+            <p class="text-slate-300 text-xs leading-relaxed mt-4 px-2 font-light text-center">${bio || '觀看我的電子名片！'}</p>
+          </div>
+
+          <div class="space-y-3 pt-2">
+            ${experience ? `
+              <div class="block-card p-3.5 rounded-2xl flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-cyan-300 shrink-0">
+                  <i data-lucide="briefcase" class="w-5 h-5"></i>
+                </div>
+                <div class="overflow-hidden">
+                  <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Experience / 專案經歷</p>
+                  <p class="text-xs font-semibold text-white truncate mt-0.5">${experience}</p>
+                </div>
+              </div>
+            ` : ''}
+
+            ${skillsArray.length > 0 ? `
+              <div class="block-card p-3.5 rounded-2xl">
+                <div class="flex items-center gap-2 mb-2">
+                  <div class="w-6 h-6 rounded-lg bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-indigo-300">
+                    <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
+                  </div>
+                  <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Skills & Expertise</p>
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                  ${skillsArray.map(skill => `<span class="px-2.5 py-1 bg-indigo-950/90 border border-indigo-800/60 text-cyan-300 rounded-lg text-[11px] font-mono">${skill}</span>`).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            ${email ? `
+              <a href="mailto:${email}" class="block-card p-3.5 rounded-2xl flex items-center justify-between group">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-xl bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-pink-400">
+                    <i data-lucide="mail" class="w-5 h-5"></i>
+                  </div>
+                  <div>
+                    <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Email</p>
+                    <p class="text-xs font-semibold text-white">${email}</p>
+                  </div>
+                </div>
+                <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500 group-hover:text-cyan-400 transition-colors"></i>
+              </a>
+            ` : ''}
+
+            ${portfolio ? `
+              <a href="${portfolio}" target="_blank" class="block-card p-3.5 rounded-2xl flex items-center justify-between group">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-xl bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-cyan-400">
+                    <i data-lucide="globe" class="w-5 h-5"></i>
+                  </div>
+                  <div>
+                    <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Official Website / Portfolio</p>
+                    <p class="text-xs font-semibold text-white truncate max-w-[200px]">${portfolio.replace('https://', '').replace('http://', '')}</p>
+                  </div>
+                </div>
+                <i data-lucide="external-link" class="w-4 h-4 text-slate-500 group-hover:text-cyan-400 transition-colors"></i>
+              </a>
+            ` : ''}
+
+            <div class="grid grid-cols-3 gap-2 pt-1">
+              ${instagram ? `<a href="https://instagram.com/${instagram}" target="_blank" class="block-card p-3 rounded-xl flex flex-col items-center justify-center text-slate-300 hover:text-pink-400"><i data-lucide="instagram" class="w-5 h-5 mb-1"></i><span class="text-[10px] font-mono">Instagram</span></a>` : ''}
+              ${linkedin ? `<a href="${linkedin}" target="_blank" class="block-card p-3 rounded-xl flex flex-col items-center justify-center text-slate-300 hover:text-blue-400"><i data-lucide="linkedin" class="w-5 h-5 mb-1"></i><span class="text-[10px] font-mono">LinkedIn</span></a>` : ''}
+              ${github ? `<a href="https://github.com/${github}" target="_blank" class="block-card p-3 rounded-xl flex flex-col items-center justify-center text-slate-300 hover:text-purple-400"><i data-lucide="github" class="w-5 h-5 mb-1"></i><span class="text-[10px] font-mono">GitHub</span></a>` : ''}
+            </div>
+          </div>
+
+          <div class="pt-2 flex gap-2">
+            <button onclick="unlockAndEditCard()" class="w-full py-2.5 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700/50 text-cyan-300 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all">
+              <i data-lucide="edit" class="w-4 h-4"></i> 編輯此電子名片
+            </button>
+          </div>
+
+          <footer class="text-center pt-2">
+            <p class="text-[10px] font-mono text-slate-600">POWERED BY NTU AI SOCIETY • NFC CARD</p>
+          </footer>
+        </div>
+      `;
+      if (window.lucide) lucide.createIcons();
+    }
+
+    async function saveCard(e) {
+      e.preventDefault();
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.innerText = '正在加密並發佈...';
+      submitBtn.disabled = true;
+
+      const pinKey = document.getElementById('pin_code').value;
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const redirectPath = urlParams.get('p');
+      let path = redirectPath ? redirectPath : window.location.pathname;
+      let pathSegments = path.split('/').filter(Boolean);
+
+      let cardId = pathSegments[pathSegments.length - 1] || '001';
+      if (cardId === 'c' || !cardId) cardId = '001';
+
+      // Supabase 後台資料全欄位 AES 加密處理
+      const cardData = {
+        card_id: cardId,
+        is_active: true,
+        name_zh: encryptData(document.getElementById('name_zh').value, pinKey),
+        name_en: encryptData(document.getElementById('name_en').value, pinKey),
+        school: encryptData(document.getElementById('school').value, pinKey),
+        department: encryptData(document.getElementById('department').value, pinKey),
+        title: encryptData(document.getElementById('title').value, pinKey),
+        experience: encryptData(document.getElementById('experience').value, pinKey),
+        skills: encryptData(document.getElementById('skills').value, pinKey),
+        email: encryptData(document.getElementById('email').value, pinKey),
+        instagram: encryptData(document.getElementById('instagram').value, pinKey),
+        linkedin: encryptData(document.getElementById('linkedin').value, pinKey),
+        github: encryptData(document.getElementById('github').value, pinKey),
+        portfolio: encryptData(document.getElementById('portfolio').value, pinKey),
+        bio: encryptData(document.getElementById('bio').value, pinKey),
+        avatar_url: encryptData(currentAvatarSeed, pinKey)
+      };
+
+      if (supabaseClient) {
+        const { error } = await supabaseClient.from('cards').upsert(cardData);
+        if (error) {
+          alert('儲存失敗：' + error.message);
+          submitBtn.innerText = '🚀 加密並發佈電子名片';
+          submitBtn.disabled = false;
+          return;
+        }
+      }
+
+      alert('🎉 電子名片全欄位加密發佈成功！');
+      location.reload();
+    }
+
+    window.onload = init;
   </script>
 </body>
 </html>
