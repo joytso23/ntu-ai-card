@@ -41,11 +41,114 @@ box-shadow: 0 10px 25px -5px rgba(6, 182, 212, 0.15);
 <script>
 const SUPABASE_URL = 'https://hhxwldpwoiegjosjpgla.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhoeHdsZHB3b2llZ2pvc2pwZ2xhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2OTY5NjEsImV4cCI6MjEwMjI3Mjk2MX0.bsEDol7G951_VPwp5gxq7ItNtyhPLLjcUAopbvNkvC8';
-// 系統公開展示解密用的預設金鑰
 const PUBLIC_SYS_KEY = 'NTU_AI_CARD_PUBLIC_SYSTEM_KEY_2026';
+
 let supabaseClient = null;
 let currentAvatarSeed = 'ntu-ai';
 let currentCardData = null;
+let currentLang = 'zh'; // 預設語言：'zh' 或 'en'
+
+// 語系字典
+const i18n = {
+  zh: {
+    cardNo: "卡片編號：",
+    createTitle: "建立個人網站卡片",
+    editTitle: "編輯個人網站名片",
+    changeAvatar: "換個造型/表情",
+    pinLabel: "🔐 設定個人編輯管理 PIN 碼 *",
+    pinPlaceholder: "請輸入 4-8 位數字密碼",
+    pinHint: "只有名片主人輸入此 PIN 碼才能進行修改。",
+    nameZh: "中文姓名 *",
+    nameZhPlaceholder: "王小明",
+    nameEn: "英文姓名",
+    nameEnPlaceholder: "Ian Wang",
+    school: "學校 / 單位 *",
+    schoolPlaceholder: "國立臺灣大學",
+    dept: "系所 / 部門",
+    deptPlaceholder: "資訊工程學系",
+    titleLabel: "社團職位 / 身份標籤",
+    addTitleBtn: "新增職位",
+    titlePlaceholder: "例：NTU AI/社長",
+    expLabel: "重要經歷 / 專案亮點",
+    addExpBtn: "新增經歷",
+    expPlaceholder: "例：台積電 軟體實習工程師",
+    skillsLabel: "專業技能 (逗號分開)",
+    skillsPlaceholder: "Python, Marketing, FinTech",
+    socialLabel: "聯絡與社群連結",
+    emailPlaceholder: "電子信箱",
+    igPlaceholder: "Instagram 帳號",
+    linkedinPlaceholder: "LinkedIn 個人頁面網址",
+    githubPlaceholder: "GitHub 帳號",
+    portfolioPlaceholder: "個人作品集 / 官網網址",
+    aboutLabel: "About Me (故事簡介)",
+    aiBtn: "✨ 依經歷生成",
+    aiGenerating: "生成中...",
+    bioPlaceholder: "填寫經歷後點擊生成...",
+    submitBtn: "發布電子名片 ！",
+    submitting: "正在加密並發布...",
+    editCardBtn: "✏️ 編輯電子名片",
+    pinPrompt: "🔐 請輸入建立名片時設定的 PIN 碼以進行編輯：",
+    pinError: "❌ PIN 碼不正確！只有名片主人可以編輯。",
+    saveSuccess: "🎉 電子名片加密發布成功！",
+    saveFail: "儲存失敗："
+  },
+  en: {
+    cardNo: "Card ID: ",
+    createTitle: "Create E-Business Card",
+    editTitle: "Edit E-Business Card",
+    changeAvatar: "Randomize Avatar",
+    pinLabel: "🔐 Set Management PIN Code *",
+    pinPlaceholder: "Enter 4-8 digit PIN",
+    pinHint: "Only card owner with this PIN can edit details.",
+    nameZh: "Chinese Name *",
+    nameZhPlaceholder: "e.g., 王小明",
+    nameEn: "English Name",
+    nameEnPlaceholder: "e.g., Ian Wang",
+    school: "University / Org *",
+    schoolPlaceholder: "National Taiwan University",
+    dept: "Department",
+    deptPlaceholder: "Computer Science",
+    titleLabel: "Society Positions / Titles",
+    addTitleBtn: "Add Title",
+    titlePlaceholder: "e.g., NTU AI / President",
+    expLabel: "Experiences & Highlights",
+    addExpBtn: "Add Experience",
+    expPlaceholder: "e.g., TSMC Software Engineer Intern",
+    skillsLabel: "Skills (Comma separated)",
+    skillsPlaceholder: "Python, Marketing, FinTech",
+    socialLabel: "Contact & Social Links",
+    emailPlaceholder: "Email Address",
+    igPlaceholder: "Instagram Username",
+    linkedinPlaceholder: "LinkedIn Profile URL",
+    githubPlaceholder: "GitHub Username",
+    portfolioPlaceholder: "Portfolio / Website URL",
+    aboutLabel: "About Me (Bio)",
+    aiBtn: "✨ Generate Bio",
+    aiGenerating: "Generating...",
+    bioPlaceholder: "Fill experiences then click generate...",
+    submitBtn: "Publish E-Card !",
+    submitting: "Encrypting & Publishing...",
+    editCardBtn: "✏️ Edit E-Card",
+    pinPrompt: "🔐 Enter your PIN code to edit this card:",
+    pinError: "❌ Incorrect PIN! Access denied.",
+    saveSuccess: "🎉 E-Card published successfully!",
+    saveFail: "Save failed: "
+  }
+};
+
+function t(key) {
+  return i18n[currentLang][key] || key;
+}
+
+function toggleLanguage() {
+  currentLang = currentLang === 'zh' ? 'en' : 'zh';
+  const container = document.getElementById('content');
+  if (currentCardData && currentCardData.is_active) {
+    renderCard(currentCardData, container);
+  } else {
+    renderForm('001', container);
+  }
+}
 
 // AES 加密與解密工具
 function encryptData(text, key) {
@@ -56,14 +159,12 @@ function decryptData(ciphertext, key) {
   if (!ciphertext) return '';
   try {
     const bytes = CryptoJS.AES.decrypt(ciphertext, key);
-    const decrypted = bytes.toString(CryptoJS.enc.Utf8);
-    return decrypted;
+    return bytes.toString(CryptoJS.enc.Utf8);
   } catch (e) {
     return '';
   }
 }
 
-// 將 PIN 碼轉為雜湊以利寫入資料庫比對
 function hashPin(pin) {
   return CryptoJS.SHA256(pin + '_SALT_NTU_AI').toString();
 }
@@ -117,71 +218,73 @@ function renderForm(id, container, existingData = null) {
   }
   
   const experiences = existingData && existingData.experiences && existingData.experiences.length > 0
-    ? existingData.experiences
-    : [''];
+    ? existingData.experiences : [''];
   const titles = existingData && existingData.titles && existingData.titles.length > 0
-    ? existingData.titles
-    : [''];
+    ? existingData.titles : [''];
 
   container.innerHTML = `
+    <div class="flex justify-end mb-2">
+      <button type="button" onclick="toggleLanguage()" class="text-[11px] font-mono bg-indigo-950/80 hover:bg-indigo-900 border border-cyan-500/40 text-cyan-300 px-2.5 py-1 rounded-full transition-all flex items-center gap-1">
+        <i data-lucide="globe" class="w-3 h-3"></i> ${currentLang === 'zh' ? 'English' : '繁體中文'}
+      </button>
+    </div>
+
     <header class="text-center mb-6 border-b border-indigo-500/20 pb-4">
       <span class="text-[10px] font-mono tracking-widest text-cyan-400 bg-indigo-950/80 border border-indigo-700/50 px-3 py-1 rounded-full">NTU AI SOCIETY</span>
-      <h1 class="text-xl font-bold mt-3 text-white">${existingData ? '編輯個人網站名片' : '建立個人網站卡片'}</h1>
-      <p class="text-xs text-slate-400 mt-1 font-mono">卡片編號：<span class="text-purple-400 font-bold">#${id}</span></p>
+      <h1 class="text-xl font-bold mt-3 text-white">${existingData ? t('editTitle') : t('createTitle')}</h1>
+      <p class="text-xs text-slate-400 mt-1 font-mono">${t('cardNo')}<span class="text-purple-400 font-bold">#${id}</span></p>
     </header>
 
     <form onsubmit="saveCard(event)" class="space-y-4">
-      <!-- 頭像選擇區塊 -->
       <div class="flex flex-col items-center justify-center mb-2">
         <div class="relative w-20 h-20 rounded-full bg-slate-900 border-2 border-cyan-400 p-1 mb-2 shadow-lg shadow-cyan-500/20">
           <img id="avatarPreview" src="${getAvatarUrl(currentAvatarSeed)}" class="w-full h-full object-cover rounded-full" alt="Avatar">
         </div>
         <button type="button" onclick="randomizeAvatar()" class="text-xs text-cyan-300 flex items-center gap-1 bg-indigo-950/80 hover:bg-indigo-900 px-3 py-1 rounded-full border border-indigo-700/50 transition-all">
-          <i data-lucide="refresh-cw" class="w-3 h-3"></i> 換個造型/表情
+          <i data-lucide="refresh-cw" class="w-3 h-3"></i> ${t('changeAvatar')}
         </button>
       </div>
 
-      <!-- 隱私設定：設定密碼 -->
       <div class="bg-indigo-950/50 border border-indigo-500/30 p-3 rounded-xl space-y-1">
-        <label class="block text-xs font-bold text-cyan-300">🔐 設定個人編輯管理 PIN 碼 *</label>
-        <input type="password" id="pin_code" required value="${existingData?.pin_code || ''}" placeholder="請輸入 4-8 位數字密碼" class="w-full bg-slate-950/80 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-cyan-400 font-mono">
-        <p class="text-[10px] text-slate-400">只有名片主人輸入此 PIN 碼才能進行修改。</p>
+        <label class="block text-xs font-bold text-cyan-300">${t('pinLabel')}</label>
+        <input type="password" id="pin_code" required value="${existingData?.pin_code || ''}" placeholder="${t('pinPlaceholder')}" class="w-full bg-slate-950/80 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-cyan-400 font-mono">
+        <p class="text-[10px] text-slate-400">${t('pinHint')}</p>
       </div>
 
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="block text-xs font-medium text-indigo-200 mb-1">中文姓名 *</label>
-          <input type="text" id="name_zh" required value="${existingData?.name_zh || ''}" placeholder="王小明" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+          <label class="block text-xs font-medium text-indigo-200 mb-1">${t('nameZh')}</label>
+          <input type="text" id="name_zh" required value="${existingData?.name_zh || ''}" placeholder="${t('nameZhPlaceholder')}" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
         </div>
         <div>
-          <label class="block text-xs font-medium text-indigo-200 mb-1">英文姓名</label>
-          <input type="text" id="name_en" value="${existingData?.name_en || ''}" placeholder="Ian Wang" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+          <label class="block text-xs font-medium text-indigo-200 mb-1">${t('nameEn')}</label>
+          <input type="text" id="name_en" value="${existingData?.name_en || ''}" placeholder="${t('nameEnPlaceholder')}" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
         </div>
       </div>
 
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="block text-xs font-medium text-indigo-200 mb-1">學校 / 單位 *</label>
-          <input type="text" id="school" value="${existingData?.school || ''}" placeholder="國立臺灣大學" required class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+          <label class="block text-xs font-medium text-indigo-200 mb-1">${t('school')}</label>
+          <input type="text" id="school" value="${existingData?.school || ''}" placeholder="${t('schoolPlaceholder')}" required class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
         </div>
         <div>
-          <label class="block text-xs font-medium text-indigo-200 mb-1">系所 / 部門</label>
-          <input type="text" id="department" value="${existingData?.department || ''}" placeholder="資訊工程學系" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+          <label class="block text-xs font-medium text-indigo-200 mb-1">${t('dept')}</label>
+          <input type="text" id="department" value="${existingData?.department || ''}" placeholder="${t('deptPlaceholder')}" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
         </div>
       </div>
 
-      <!-- 動態多筆社團職位區域 -->
+      <!-- 動態多筆社團職位 -->
       <div class="space-y-2 pt-1">
         <div class="flex items-center justify-between">
-          <label class="block text-xs font-medium text-indigo-200">社團職位 / 身份標籤</label>
+          <label class="block text-xs font-medium text-indigo-200">${t('titleLabel')}</label>
           <button type="button" onclick="addTitleInput()" class="text-[11px] text-cyan-300 font-semibold flex items-center gap-1 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/50 px-2.5 py-1 rounded-lg transition-all">
-            <i data-lucide="plus" class="w-3.5 h-3.5 text-cyan-400"></i> 新增職位
+            <i data-lucide="plus" class="w-3.5 h-3.5 text-cyan-400"></i> ${t('addTitleBtn')}
           </button>
         </div>
         <div id="titleContainer" class="space-y-2">
-          ${titles.map(t => `
+          ${titles.map(tVal => `
             <div class="flex items-center gap-2 title-item">
-              <input type="text" value="${t}" placeholder="例：NTU AI/社長" class="title-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+              <input type="text" value="${tVal}" placeholder="${t('titlePlaceholder')}" class="title-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
               <button type="button" onclick="removeTitleInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
                 <i data-lucide="trash-2" class="w-4 h-4"></i>
               </button>
@@ -190,18 +293,18 @@ function renderForm(id, container, existingData = null) {
         </div>
       </div>
 
-      <!-- 動態多筆經歷新增區域 -->
+      <!-- 動態多筆經歷 -->
       <div class="space-y-2 pt-1">
         <div class="flex items-center justify-between">
-          <label class="block text-xs font-medium text-indigo-200">重要經歷 / 專案亮點</label>
+          <label class="block text-xs font-medium text-indigo-200">${t('expLabel')}</label>
           <button type="button" onclick="addExperienceInput()" class="text-[11px] text-cyan-300 font-semibold flex items-center gap-1 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/50 px-2.5 py-1 rounded-lg transition-all">
-            <i data-lucide="plus" class="w-3.5 h-3.5 text-cyan-400"></i> 新增經歷
+            <i data-lucide="plus" class="w-3.5 h-3.5 text-cyan-400"></i> ${t('addExpBtn')}
           </button>
         </div>
         <div id="experienceContainer" class="space-y-2">
           ${experiences.map(exp => `
             <div class="flex items-center gap-2 exp-item">
-              <input type="text" value="${exp}" placeholder="例：台積電 軟體實習工程師" class="exp-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+              <input type="text" value="${exp}" placeholder="${t('expPlaceholder')}" class="exp-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
               <button type="button" onclick="removeExperienceInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
                 <i data-lucide="trash-2" class="w-4 h-4"></i>
               </button>
@@ -211,32 +314,32 @@ function renderForm(id, container, existingData = null) {
       </div>
 
       <div>
-        <label class="block text-xs font-medium text-indigo-200 mb-1">專業技能 (逗號分開)</label>
-        <input type="text" id="skills" value="${existingData?.skills || ''}" placeholder="Python, Marketing, FinTech" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+        <label class="block text-xs font-medium text-indigo-200 mb-1">${t('skillsLabel')}</label>
+        <input type="text" id="skills" value="${existingData?.skills || ''}" placeholder="${t('skillsPlaceholder')}" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
       </div>
 
       <div class="space-y-2 pt-2">
-        <label class="block text-xs font-medium text-indigo-400 uppercase tracking-wider font-mono">聯絡與社群連結</label>
-        <input type="email" id="email" value="${existingData?.email || ''}" placeholder="電子信箱" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-        <input type="text" id="instagram" value="${existingData?.instagram || ''}" placeholder="Instagram 帳號" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-        <input type="url" id="linkedin" value="${existingData?.linkedin || ''}" placeholder="LinkedIn 個人頁面網址" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-        <input type="text" id="github" value="${existingData?.github || ''}" placeholder="GitHub 帳號" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-        <input type="url" id="portfolio" value="${existingData?.portfolio || ''}" placeholder="個人作品集 / 官網網址" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+        <label class="block text-xs font-medium text-indigo-400 uppercase tracking-wider font-mono">${t('socialLabel')}</label>
+        <input type="email" id="email" value="${existingData?.email || ''}" placeholder="${t('emailPlaceholder')}" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+        <input type="text" id="instagram" value="${existingData?.instagram || ''}" placeholder="${t('igPlaceholder')}" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+        <input type="url" id="linkedin" value="${existingData?.linkedin || ''}" placeholder="${t('linkedinPlaceholder')}" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+        <input type="text" id="github" value="${existingData?.github || ''}" placeholder="${t('githubPlaceholder')}" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+        <input type="url" id="portfolio" value="${existingData?.portfolio || ''}" placeholder="${t('portfolioPlaceholder')}" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
       </div>
 
       <div class="pt-2">
         <div class="flex items-center justify-between mb-1">
-          <label class="block text-xs font-medium text-indigo-200">About Me (故事簡介)</label>
+          <label class="block text-xs font-medium text-indigo-200">${t('aboutLabel')}</label>
           <button type="button" id="geminiBtn" onclick="generateGeminiBio()" class="text-xs text-cyan-300 font-semibold flex items-center gap-1 bg-gradient-to-r from-indigo-900 to-purple-900 border border-cyan-500/40 px-2.5 py-1 rounded-lg transition-all">
             <i data-lucide="sparkles" class="w-3.5 h-3.5 text-cyan-400"></i>
-            <span id="geminiBtnText">✨ 依經歷生成</span>
+            <span id="geminiBtnText">${t('aiBtn')}</span>
           </button>
         </div>
-        <textarea id="bio" rows="3" placeholder="填寫經歷後點擊生成..." class="w-full bg-slate-950/70 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-purple-500 resize-none leading-relaxed">${existingData?.bio || ''}</textarea>
+        <textarea id="bio" rows="3" placeholder="${t('bioPlaceholder')}" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-purple-500 resize-none leading-relaxed">${existingData?.bio || ''}</textarea>
       </div>
 
       <button type="submit" id="submitBtn" class="w-full py-3.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-500 hover:opacity-95 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 mt-4 transition-all">
-        發布電子名片 ！
+        ${t('submitBtn')}
       </button>
     </form>
   `;
@@ -248,7 +351,7 @@ function addTitleInput() {
   const div = document.createElement('div');
   div.className = 'flex items-center gap-2 title-item';
   div.innerHTML = `
-    <input type="text" value="" placeholder="例：NTU AI/社長" class="title-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+    <input type="text" value="" placeholder="${t('titlePlaceholder')}" class="title-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
     <button type="button" onclick="removeTitleInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
       <i data-lucide="trash-2" class="w-4 h-4"></i>
     </button>
@@ -271,7 +374,7 @@ function addExperienceInput() {
   const div = document.createElement('div');
   div.className = 'flex items-center gap-2 exp-item';
   div.innerHTML = `
-    <input type="text" value="" placeholder="例：台積電 軟體實習工程師" class="exp-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+    <input type="text" value="" placeholder="${t('expPlaceholder')}" class="exp-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
     <button type="button" onclick="removeExperienceInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
       <i data-lucide="trash-2" class="w-4 h-4"></i>
     </button>
@@ -299,8 +402,8 @@ async function generateGeminiBio() {
   const btn = document.getElementById('geminiBtn');
   const btnText = document.getElementById('geminiBtnText');
   
-  const name = document.getElementById('name_zh').value || '社團成員';
-  const school = document.getElementById('school').value || '國立臺灣大學';
+  const name = document.getElementById('name_zh').value || 'Member';
+  const school = document.getElementById('school').value || 'NTU';
   const dept = document.getElementById('department').value || '';
   
   const titleInputs = document.querySelectorAll('.title-input');
@@ -315,14 +418,14 @@ async function generateGeminiBio() {
 
   btn.disabled = true;
   btn.classList.add('opacity-50', 'cursor-not-allowed');
-  btnText.innerText = "生成中...";
-  bioInput.value = "⚡ AI 正在分析你的經歷亮點，撰寫個人故事中...";
+  btnText.innerText = t('aiGenerating');
+  bioInput.value = "⚡ Generating bio...";
 
   try {
     const response = await fetch('/api/generate-bio', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, school, dept, title, exp, skills })
+      body: JSON.stringify({ name, school, dept, title, exp, skills, lang: currentLang })
     });
     const data = await response.json();
     if (response.ok && data.text) {
@@ -335,12 +438,12 @@ async function generateGeminiBio() {
     if (title) fallbackBio += `目前擔任 ${title}。`;
     if (exp) fallbackBio += `專注於 ${exp} 等領域的實踐與探索，`;
     if (skills) fallbackBio += `並具備 ${skills} 等核心能力。`;
-    fallbackBio += `熱衷於持續學習與跨領域挑戰，探索更多創新的可能性！`;
+    fallbackBio += `熱衷於持續學習與跨領域挑戰！`;
     bioInput.value = fallbackBio;
   } finally {
     btn.disabled = false;
     btn.classList.remove('opacity-50', 'cursor-not-allowed');
-    btnText.innerText = "✨ 依經歷生成";
+    btnText.innerText = t('aiBtn');
   }
 }
 
@@ -388,7 +491,12 @@ function renderCard(data, container) {
           <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
           <span class="text-[10px] font-mono text-cyan-400 tracking-widest uppercase">NTU AI PORTFOLIO</span>
         </div>
-        <span class="text-[10px] font-mono text-slate-500">#${data.card_id}</span>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="toggleLanguage()" class="text-[10px] font-mono bg-indigo-950/80 hover:bg-indigo-900 border border-cyan-500/40 text-cyan-300 px-2 py-0.5 rounded-full transition-all">
+            ${currentLang === 'zh' ? 'EN' : '繁中'}
+          </button>
+          <span class="text-[10px] font-mono text-slate-500">#${data.card_id}</span>
+        </div>
       </div>
 
       <div class="text-center pt-2 pb-2">
@@ -406,10 +514,10 @@ function renderCard(data, container) {
         </p>
         ${titlesArray.length > 0 ? `
           <div class="mt-2 flex flex-wrap justify-center gap-1.5">
-            ${titlesArray.map(t => `<span class="px-3 py-1 rounded-full bg-indigo-950/80 border border-indigo-700/60 text-xs font-medium text-indigo-200">${t}</span>`).join('')}
+            ${titlesArray.map(tVal => `<span class="px-3 py-1 rounded-full bg-indigo-950/80 border border-indigo-700/60 text-xs font-medium text-indigo-200">${tVal}</span>`).join('')}
           </div>
         ` : ''}
-        <p class="text-slate-300 text-xs leading-relaxed mt-4 px-2 font-light text-center">${bio || '觀看我的電子名片！'}</p>
+        <p class="text-slate-300 text-xs leading-relaxed mt-4 px-2 font-light text-center">${bio || 'Welcome to my digital profile!'}</p>
       </div>
 
       <div class="space-y-3 pt-2">
@@ -419,7 +527,7 @@ function renderCard(data, container) {
               <div class="w-6 h-6 rounded-lg bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-cyan-300">
                 <i data-lucide="briefcase" class="w-3.5 h-3.5"></i>
               </div>
-              <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Experience / 專案經歷</p>
+              <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Experience</p>
             </div>
             <div class="space-y-1.5 pl-1">
               ${experiencesArray.map(exp => `
@@ -483,10 +591,9 @@ function renderCard(data, container) {
         </div>
       </div>
 
-      <!-- 下方編輯按鈕：需驗證 PIN 碼 -->
       <div class="pt-3">
         <button onclick="promptEditWithPin()" class="w-full py-2.5 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/50 text-cyan-300 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-lg">
-          <i data-lucide="edit-3" class="w-4 h-4"></i> ✏️ 編輯電子名片
+          <i data-lucide="edit-3" class="w-4 h-4"></i> ${t('editCardBtn')}
         </button>
       </div>
 
@@ -499,11 +606,11 @@ function renderCard(data, container) {
 }
 
 function promptEditWithPin() {
-  const pin = prompt('🔐 請輸入建立名片時設定的 PIN 碼以進行編輯：');
+  const pin = prompt(t('pinPrompt'));
   if (!pin) return;
   const hashedInput = hashPin(pin);
   if (currentCardData && currentCardData.pin_hash && currentCardData.pin_hash !== hashedInput) {
-    alert('❌ PIN 碼不正確！只有名片主人可以編輯。');
+    alert(t('pinError'));
     return;
   }
 
@@ -550,7 +657,7 @@ function promptEditWithPin() {
 async function saveCard(e) {
   e.preventDefault();
   const submitBtn = document.getElementById('submitBtn');
-  submitBtn.innerText = '正在加密並發佈...';
+  submitBtn.innerText = t('submitting');
   submitBtn.disabled = true;
 
   const pinKey = document.getElementById('pin_code').value;
@@ -590,14 +697,14 @@ async function saveCard(e) {
   if (supabaseClient) {
     const { error } = await supabaseClient.from('cards').upsert(cardData);
     if (error) {
-      alert('儲存失敗：' + error.message);
-      submitBtn.innerText = '發佈電子名片 ！';
+      alert(t('saveFail') + error.message);
+      submitBtn.innerText = t('submitBtn');
       submitBtn.disabled = false;
       return;
     }
   }
 
-  alert('🎉 電子名片加密發佈成功！');
+  alert(t('saveSuccess'));
   location.reload();
 }
 
