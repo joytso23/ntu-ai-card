@@ -1,667 +1,607 @@
 <!DOCTYPE html>
 <html lang="zh-TW" class="dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NTU AI Society - Personal Bio Website</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- 引入加密庫 CryptoJS -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-  <style>
-    @keyframes glowPulse {
-      0%, 100% { opacity: 0.35; transform: scale(1); }
-      50% { opacity: 0.65; transform: scale(1.08); }
-    }
-    .animate-glow { animation: glowPulse 7s infinite ease-in-out; }
-    .block-card {
-      background: rgba(15, 23, 42, 0.75);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(99, 102, 241, 0.25);
-      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .block-card:hover {
-      border-color: rgba(6, 182, 212, 0.6);
-      transform: translateY(-2px);
-      box-shadow: 0 10px 25px -5px rgba(6, 182, 212, 0.15);
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NTU AI Society - Personal Bio Website</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- 引入加密庫 CryptoJS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+<style>
+@keyframes glowPulse {
+0%, 100% { opacity: 0.35; transform: scale(1); }
+50% { opacity: 0.65; transform: scale(1.08); }
+}
+.animate-glow { animation: glowPulse 7s infinite ease-in-out; }
+.block-card {
+background: rgba(15, 23, 42, 0.75);
+backdrop-filter: blur(12px);
+border: 1px solid rgba(99, 102, 241, 0.25);
+transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.block-card:hover {
+border-color: rgba(6, 182, 212, 0.6);
+transform: translateY(-2px);
+box-shadow: 0 10px 25px -5px rgba(6, 182, 212, 0.15);
+}
+</style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center justify-center p-4 selection:bg-cyan-500 selection:text-white relative overflow-x-hidden">
-
-  <div class="fixed top-[-10%] left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-gradient-to-tr from-indigo-900/40 via-purple-900/30 to-cyan-500/20 blur-[120px] pointer-events-none rounded-full animate-glow"></div>
-
-  <div id="app" class="w-full max-w-md bg-slate-900/80 backdrop-blur-2xl border border-indigo-500/20 rounded-[2.5rem] p-6 shadow-2xl relative z-10 my-6">
-    <div id="loading" class="text-center py-16">
-      <div class="w-10 h-10 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-      <p class="text-slate-400 font-mono text-xs tracking-widest animate-pulse">LOADING SECURE PORTFOLIO...</p>
-    </div>
-    <div id="content" class="hidden"></div>
-  </div>
-
-  <script>
-    const SUPABASE_URL = 'https://hhxwldpwoiegjosjpgla.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhoeHdsZHB3b2llZ2pvc2pwZ2xhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2OTY5NjEsImV4cCI6MjEwMjI3Mjk2MX0.bsEDol7G951_VPwp5gxq7ItNtyhPLLjcUAopbvNkvC8';
-
-    // 系統公開展示解密用的預設金鑰
-    const PUBLIC_SYS_KEY = 'NTU_AI_CARD_PUBLIC_SYSTEM_KEY_2026';
-
-    let supabaseClient = null;
-    let currentAvatarSeed = 'ntu-ai';
-    let currentGender = 'male'; // 'male' or 'female'
-    let currentCardData = null;
-
-    // AES 加密與解密工具
-    function encryptData(text, key) {
-      if (!text) return '';
-      return CryptoJS.AES.encrypt(text, key).toString();
-    }
-
-    function decryptData(ciphertext, key) {
-      if (!ciphertext) return '';
-      try {
-        const bytes = CryptoJS.AES.decrypt(ciphertext, key);
-        const decrypted = bytes.toString(CryptoJS.enc.Utf8);
-        return decrypted;
-      } catch (e) {
-        return '';
-      }
-    }
-
-    // 將 PIN 碼轉為雜湊以利寫入資料庫比對
-    function hashPin(pin) {
-      return CryptoJS.SHA256(pin + '_SALT_NTU_AI').toString();
-    }
-
-    async function init() {
-      const loadingDiv = document.getElementById('loading');
-      const contentDiv = document.getElementById('content');
-
-      try {
-        if (window.supabase && SUPABASE_URL.includes('.supabase.co')) {
-          supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        }
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const redirectPath = urlParams.get('p');
-        let path = redirectPath ? redirectPath : window.location.pathname;
-        let pathSegments = path.split('/').filter(Boolean);
-
-        let cardId = pathSegments[pathSegments.length - 1] || '001';
-        if (cardId === 'c' || !cardId) cardId = '001';
-
-        if (supabaseClient) {
-          const { data, error } = await supabaseClient
-            .from('cards')
-            .select('*')
-            .eq('card_id', cardId)
-            .maybeSingle();
-
-          if (!error && data) currentCardData = data;
-        }
-
-        loadingDiv.classList.add('hidden');
-        contentDiv.classList.remove('hidden');
-
-        if (currentCardData && currentCardData.is_active) {
-          renderCard(currentCardData, contentDiv);
-        } else {
-          renderForm(cardId, contentDiv);
-        }
-
-      } catch (err) {
-        console.error("Init Error:", err);
-      }
-    }
-
-function getAvatarUrl(seed, styleType = 'human') {
-  if (seed.startsWith('http')) return seed;
-  // cyber 為機器人/電子風格，human 為人形風格
-  const style = styleType === 'cyber' ? 'bottts' : 'avataaars';
-  return `https://api.dicebear.com/7.x/${style}/svg?seed=${encodeURIComponent(seed)}`;
-}
-
-    function renderForm(id, container, existingData = null) {
-      if (existingData && existingData.avatar_url) {
-        currentAvatarSeed = existingData.avatar_url;
-      } else {
-        currentAvatarSeed = `ntu-${id}-${Math.floor(Math.random() * 1000)}`;
-      }
-
-      const avatarUrl = getAvatarUrl(currentAvatarSeed, currentGender);
-
-      // 處理多筆經歷與多筆社團職位列表
-      const experiences = existingData && existingData.experiences && existingData.experiences.length > 0 
-        ? existingData.experiences 
-        : [''];
-
-      const titles = existingData && existingData.titles && existingData.titles.length > 0 
-        ? existingData.titles 
-        : [''];
-
-      container.innerHTML = `
-        <header class="text-center mb-6 border-b border-indigo-500/20 pb-4">
-          <span class="text-[10px] font-mono tracking-widest text-cyan-400 bg-indigo-950/80 border border-indigo-700/50 px-3 py-1 rounded-full">NTU AI SOCIETY</span>
-          <h1 class="text-xl font-bold mt-3 text-white">${existingData ? '編輯個人網站名片' : '建立個人網站卡片'}</h1>
-          <p class="text-xs text-slate-400 mt-1 font-mono">卡片編號：<span class="text-purple-400 font-bold">#${id}</span></p>
-        </header>
-        
-        <form onsubmit="saveCard(event)" class="space-y-4">
-          
-<!-- 頭像選擇區塊 -->
-<div class="flex flex-col items-center justify-center mb-2">
-  <div class="relative w-20 h-20 rounded-full bg-slate-900 border-2 border-cyan-400 p-1 mb-2 shadow-lg shadow-cyan-500/20">
-    <img id="avatarPreview" src="${getAvatarUrl(currentAvatarSeed, currentAvatarStyle)}" class="w-full h-full object-cover rounded-full" alt="Avatar">
-  </div>
-  
-  <div class="flex items-center gap-2 mb-2">
-    <button type="button" onclick="setAvatarStyle('cyber')" id="btnCyber" class="text-[11px] px-2.5 py-0.5 rounded-full border transition-all ${currentAvatarStyle === 'cyber' ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300' : 'border-slate-700 text-slate-400'}">🤖 電子風格</button>
-    <button type="button" onclick="setAvatarStyle('human')" id="btnHuman" class="text-[11px] px-2.5 py-0.5 rounded-full border transition-all ${currentAvatarStyle === 'human' ? 'bg-pink-500/20 border-pink-400 text-pink-300' : 'border-slate-700 text-slate-400'}">👤 人形風格</button>
-  </div>
-
-  <button type="button" onclick="randomizeAvatar()" class="text-xs text-cyan-300 flex items-center gap-1 bg-indigo-950/80 hover:bg-indigo-900 px-3 py-1 rounded-full border border-indigo-700/50">
-    <i data-lucide="refresh-cw" class="w-3 h-3"></i> 換個造型/表情
-  </button>
+<div class="fixed top-[-10%] left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-gradient-to-tr from-indigo-900/40 via-purple-900/30 to-cyan-500/20 blur-[120px] pointer-events-none rounded-full animate-glow"></div>
+<div id="app" class="w-full max-w-md bg-slate-900/80 backdrop-blur-2xl border border-indigo-500/20 rounded-[2.5rem] p-6 shadow-2xl relative z-10 my-6">
+<div id="loading" class="text-center py-16">
+<div class="w-10 h-10 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+<p class="text-slate-400 font-mono text-xs tracking-widest animate-pulse">LOADING SECURE PORTFOLIO...</p>
+</div>
+<div id="content" class="hidden"></div>
 </div>
 
-          <!-- 隱私設定：設定密碼 -->
-          <div class="bg-indigo-950/50 border border-indigo-500/30 p-3 rounded-xl space-y-1">
-            <label class="block text-xs font-bold text-cyan-300">🔐 設定個人編輯管理 PIN 碼 *</label>
-            <input type="password" id="pin_code" required value="${existingData?.pin_code || ''}" placeholder="請輸入 4-8 位數字密碼" class="w-full bg-slate-950/80 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-cyan-400 font-mono">
-            <p class="text-[10px] text-slate-400">只有名片主人輸入此 PIN 碼才能進行修改。</p>
-          </div>
+<script>
+const SUPABASE_URL = 'https://hhxwldpwoiegjosjpgla.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhoeHdsZHB3b2llZ2pvc2pwZ2xhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2OTY5NjEsImV4cCI6MjEwMjI3Mjk2MX0.bsEDol7G951_VPwp5gxq7ItNtyhPLLjcUAopbvNkvC8';
+// 系統公開展示解密用的預設金鑰
+const PUBLIC_SYS_KEY = 'NTU_AI_CARD_PUBLIC_SYSTEM_KEY_2026';
+let supabaseClient = null;
+let currentAvatarSeed = 'ntu-ai';
+let currentCardData = null;
 
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs font-medium text-indigo-200 mb-1">中文姓名 *</label>
-              <input type="text" id="name_zh" required value="${existingData?.name_zh || ''}" placeholder="王小明" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-indigo-200 mb-1">英文姓名</label>
-              <input type="text" id="name_en" value="${existingData?.name_en || ''}" placeholder="Ian Wang" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-            </div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs font-medium text-indigo-200 mb-1">學校 / 單位 *</label>
-              <input type="text" id="school" value="${existingData?.school || ''}" placeholder="國立臺灣大學" required class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-indigo-200 mb-1">系所 / 部門</label>
-              <input type="text" id="department" value="${existingData?.department || ''}" placeholder="資訊工程學系" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-            </div>
-          </div>
-
-          <!-- 動態多筆社團職位區域 -->
-          <div class="space-y-2 pt-1">
-            <div class="flex items-center justify-between">
-              <label class="block text-xs font-medium text-indigo-200">社團職位 / 身份標籤</label>
-              <button type="button" onclick="addTitleInput()" class="text-[11px] text-cyan-300 font-semibold flex items-center gap-1 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/50 px-2.5 py-1 rounded-lg transition-all">
-                <i data-lucide="plus" class="w-3.5 h-3.5 text-cyan-400"></i> 新增職位
-              </button>
-            </div>
-            <div id="titleContainer" class="space-y-2">
-              ${titles.map(t => `
-                <div class="flex items-center gap-2 title-item">
-                  <input type="text" value="${t}" placeholder="例：NTU AI/社長" class="title-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-                  <button type="button" onclick="removeTitleInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
-                    <i data-lucide="trash-2" class="w-4 h-4"></i>
-                  </button>
-                </div>
-              `).join('')}
-            </div>
-          </div>
-
-          <!-- 動態多筆經歷新增區域 -->
-          <div class="space-y-2 pt-1">
-            <div class="flex items-center justify-between">
-              <label class="block text-xs font-medium text-indigo-200">重要經歷 / 專案亮點</label>
-              <button type="button" onclick="addExperienceInput()" class="text-[11px] text-cyan-300 font-semibold flex items-center gap-1 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/50 px-2.5 py-1 rounded-lg transition-all">
-                <i data-lucide="plus" class="w-3.5 h-3.5 text-cyan-400"></i> 新增經歷
-              </button>
-            </div>
-            <div id="experienceContainer" class="space-y-2">
-              ${experiences.map(exp => `
-                <div class="flex items-center gap-2 exp-item">
-                  <input type="text" value="${exp}" placeholder="例：台積電 軟體實習工程師" class="exp-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-                  <button type="button" onclick="removeExperienceInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
-                    <i data-lucide="trash-2" class="w-4 h-4"></i>
-                  </button>
-                </div>
-              `).join('')}
-            </div>
-          </div>
-
-          <div>
-            <label class="block text-xs font-medium text-indigo-200 mb-1">專業技能 (逗號分開)</label>
-            <input type="text" id="skills" value="${existingData?.skills || ''}" placeholder="Python, Marketing, FinTech" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-          </div>
-
-          <div class="space-y-2 pt-2">
-            <label class="block text-xs font-medium text-indigo-400 uppercase tracking-wider font-mono">聯絡與社群連結</label>
-            <input type="email" id="email" value="${existingData?.email || ''}" placeholder="電子信箱" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-            <input type="text" id="instagram" value="${existingData?.instagram || ''}" placeholder="Instagram 帳號" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-            <input type="url" id="linkedin" value="${existingData?.linkedin || ''}" placeholder="LinkedIn 個人頁面網址" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-            <input type="text" id="github" value="${existingData?.github || ''}" placeholder="GitHub 帳號" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-            <input type="url" id="portfolio" value="${existingData?.portfolio || ''}" placeholder="個人作品集 / 官網網址" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-          </div>
-
-          <div class="pt-2">
-            <div class="flex items-center justify-between mb-1">
-              <label class="block text-xs font-medium text-indigo-200">About Me (故事簡介)</label>
-              <button type="button" id="geminiBtn" onclick="generateGeminiBio()" class="text-xs text-cyan-300 font-semibold flex items-center gap-1 bg-gradient-to-r from-indigo-900 to-purple-900 border border-cyan-500/40 px-2.5 py-1 rounded-lg transition-all">
-                <i data-lucide="sparkles" class="w-3.5 h-3.5 text-cyan-400"></i>
-                <span id="geminiBtnText">✨ 依經歷生成</span>
-              </button>
-            </div>
-            <textarea id="bio" rows="3" placeholder="填寫經歷後點擊生成..." class="w-full bg-slate-950/70 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-purple-500 resize-none leading-relaxed">${existingData?.bio || ''}</textarea>
-          </div>
-
-          <button type="submit" id="submitBtn" class="w-full py-3.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-500 hover:opacity-95 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 mt-4 transition-all">
-            🚀 加密並發佈個人網站
-          </button>
-        </form>
-      `;
-      if (window.lucide) lucide.createIcons();
-    }
-
-let currentAvatarStyle = 'human'; // 預設為 human 或 cyber
-
-function setAvatarStyle(styleType) {
-  currentAvatarStyle = styleType;
-  
-  const btnCyber = document.getElementById('btnCyber');
-  const btnHuman = document.getElementById('btnHuman');
-  
-  if (btnCyber && btnHuman) {
-    btnCyber.className = `text-[11px] px-2.5 py-0.5 rounded-full border transition-all ${styleType === 'cyber' ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300' : 'border-slate-700 text-slate-400'}`;
-    btnHuman.className = `text-[11px] px-2.5 py-0.5 rounded-full border transition-all ${styleType === 'human' ? 'bg-pink-500/20 border-pink-400 text-pink-300' : 'border-slate-700 text-slate-400'}`;
+// AES 加密與解密工具
+function encryptData(text, key) {
+  if (!text) return '';
+  return CryptoJS.AES.encrypt(text, key).toString();
+}
+function decryptData(ciphertext, key) {
+  if (!ciphertext) return '';
+  try {
+    const bytes = CryptoJS.AES.decrypt(ciphertext, key);
+    const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+    return decrypted;
+  } catch (e) {
+    return '';
   }
-  
-  document.getElementById('avatarPreview').src = getAvatarUrl(currentAvatarSeed, currentAvatarStyle);
 }
 
-    // 新增一格職位欄位
-    function addTitleInput() {
-      const container = document.getElementById('titleContainer');
-      const div = document.createElement('div');
-      div.className = 'flex items-center gap-2 title-item';
-      div.innerHTML = `
-        <input type="text" placeholder="例：NTU AI 社長 / 區塊鏈社 技術部長" class="title-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-        <button type="button" onclick="removeTitleInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
-          <i data-lucide="trash-2" class="w-4 h-4"></i>
-        </button>
-      `;
-      container.appendChild(div);
-      if (window.lucide) lucide.createIcons();
+// 將 PIN 碼轉為雜湊以利寫入資料庫比對
+function hashPin(pin) {
+  return CryptoJS.SHA256(pin + '_SALT_NTU_AI').toString();
+}
+
+async function init() {
+  const loadingDiv = document.getElementById('loading');
+  const contentDiv = document.getElementById('content');
+  try {
+    if (window.supabase && SUPABASE_URL.includes('.supabase.co')) {
+      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     }
-
-    function removeTitleInput(btn) {
-      const container = document.getElementById('titleContainer');
-      if (container.children.length > 1) {
-        btn.closest('.title-item').remove();
-      } else {
-        btn.closest('.title-item').querySelector('input').value = '';
-      }
+    const urlParams = new URLSearchParams(window.location.search);
+    const redirectPath = urlParams.get('p');
+    let path = redirectPath ? redirectPath : window.location.pathname;
+    let pathSegments = path.split('/').filter(Boolean);
+    let cardId = pathSegments[pathSegments.length - 1] || '001';
+    if (cardId === 'c' || !cardId) cardId = '001';
+    
+    if (supabaseClient) {
+      const { data, error } = await supabaseClient
+        .from('cards')
+        .select('*')
+        .eq('card_id', cardId)
+        .maybeSingle();
+      if (!error && data) currentCardData = data;
     }
-
-    // 新增一格經歷輸入欄位
-    function addExperienceInput() {
-      const container = document.getElementById('experienceContainer');
-      const div = document.createElement('div');
-      div.className = 'flex items-center gap-2 exp-item';
-      div.innerHTML = `
-        <input type="text" placeholder="例：台積電實習生 / ATCC 決賽團隊" class="exp-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
-        <button type="button" onclick="removeExperienceInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
-          <i data-lucide="trash-2" class="w-4 h-4"></i>
-        </button>
-      `;
-      container.appendChild(div);
-      if (window.lucide) lucide.createIcons();
+    
+    loadingDiv.classList.add('hidden');
+    contentDiv.classList.remove('hidden');
+    
+    if (currentCardData && currentCardData.is_active) {
+      renderCard(currentCardData, contentDiv);
+    } else {
+      renderForm(cardId, contentDiv);
     }
+  } catch (err) {
+    console.error("Init Error:", err);
+  }
+}
 
-    function removeExperienceInput(btn) {
-      const container = document.getElementById('experienceContainer');
-      if (container.children.length > 1) {
-        btn.closest('.exp-item').remove();
-      } else {
-        btn.closest('.exp-item').querySelector('input').value = '';
-      }
-    }
+function getAvatarUrl(seed) {
+  if (seed.startsWith('http')) return seed;
+  return `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(seed)}`;
+}
 
-    function randomizeAvatar() {
-      currentAvatarSeed = `seed-${Math.random().toString(36).substring(7)}`;
-      document.getElementById('avatarPreview').src = getAvatarUrl(currentAvatarSeed, currentGender);
-    }
+function renderForm(id, container, existingData = null) {
+  if (existingData && existingData.avatar_url) {
+    currentAvatarSeed = existingData.avatar_url;
+  } else {
+    currentAvatarSeed = `ntu-${id}-${Math.floor(Math.random() * 1000)}`;
+  }
+  
+  const experiences = existingData && existingData.experiences && existingData.experiences.length > 0
+    ? existingData.experiences
+    : [''];
+  const titles = existingData && existingData.titles && existingData.titles.length > 0
+    ? existingData.titles
+    : [''];
 
-    async function generateGeminiBio() {
-      const bioInput = document.getElementById('bio');
-      const btn = document.getElementById('geminiBtn');
-      const btnText = document.getElementById('geminiBtnText');
+  container.innerHTML = `
+    <header class="text-center mb-6 border-b border-indigo-500/20 pb-4">
+      <span class="text-[10px] font-mono tracking-widest text-cyan-400 bg-indigo-950/80 border border-indigo-700/50 px-3 py-1 rounded-full">NTU AI SOCIETY</span>
+      <h1 class="text-xl font-bold mt-3 text-white">${existingData ? '編輯個人網站名片' : '建立個人網站卡片'}</h1>
+      <p class="text-xs text-slate-400 mt-1 font-mono">卡片編號：<span class="text-purple-400 font-bold">#${id}</span></p>
+    </header>
 
-      const name = document.getElementById('name_zh').value || '社團成員';
-      const school = document.getElementById('school').value || '國立臺灣大學';
-      const dept = document.getElementById('department').value || '';
-      
-      const titleInputs = document.querySelectorAll('.title-input');
-      const titleArray = Array.from(titleInputs).map(i => i.value.trim()).filter(Boolean);
-      const title = titleArray.join('、');
-      
-      const expInputs = document.querySelectorAll('.exp-input');
-      const expArray = Array.from(expInputs).map(i => i.value.trim()).filter(Boolean);
-      const exp = expArray.join('、');
-      
-      const skills = document.getElementById('skills').value || '';
-
-      btn.disabled = true;
-      btn.classList.add('opacity-50', 'cursor-not-allowed');
-      btnText.innerText = "生成中...";
-      bioInput.value = "⚡ AI 正在分析你的經歷亮點，撰寫個人故事中...";
-
-      try {
-        const response = await fetch('/api/generate-bio', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, school, dept, title, exp, skills })
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.text) {
-          bioInput.value = data.text.trim();
-        } else {
-          throw new Error('API request failed');
-        }
-      } catch (e) {
-        let fallbackBio = `我是來自 ${school}${dept ? ' ' + dept : ''} 的 ${name}。`;
-        if (title) fallbackBio += `目前擔任 ${title}。`;
-        if (exp) fallbackBio += `專注於 ${exp} 等領域的實踐與探索，`;
-        if (skills) fallbackBio += `並具備 ${skills} 等核心能力。`;
-        fallbackBio += `熱衷於持續學習與跨領域挑戰，探索更多創新的可能性！`;
-
-        bioInput.value = fallbackBio;
-      } finally {
-        btn.disabled = false;
-        btn.classList.remove('opacity-50', 'cursor-not-allowed');
-        btnText.innerText = "✨ 依經歷生成";
-      }
-    }
-
-    // 檢視名片：直接公開展示
-    function renderCard(data, container) {
-      const name_zh = decryptData(data.name_zh, PUBLIC_SYS_KEY);
-      const name_en = decryptData(data.name_en, PUBLIC_SYS_KEY);
-      const school = decryptData(data.school, PUBLIC_SYS_KEY);
-      const department = decryptData(data.department, PUBLIC_SYS_KEY);
-      const email = decryptData(data.email, PUBLIC_SYS_KEY);
-      
-      // 解密社團職位 JSON
-      let titlesArray = [];
-      try {
-        const rawTitle = decryptData(data.title, PUBLIC_SYS_KEY);
-        titlesArray = JSON.parse(rawTitle);
-        if (!Array.isArray(titlesArray)) titlesArray = [rawTitle];
-      } catch (e) {
-        const rawTitle = decryptData(data.title, PUBLIC_SYS_KEY);
-        if (rawTitle) titlesArray = [rawTitle];
-      }
-
-      // 解密專案經歷 JSON
-      let experiencesArray = [];
-      try {
-        const rawExp = decryptData(data.experience, PUBLIC_SYS_KEY);
-        experiencesArray = JSON.parse(rawExp);
-        if (!Array.isArray(experiencesArray)) experiencesArray = [rawExp];
-      } catch (e) {
-        const rawExp = decryptData(data.experience, PUBLIC_SYS_KEY);
-        if (rawExp) experiencesArray = [rawExp];
-      }
-
-      const skills = decryptData(data.skills, PUBLIC_SYS_KEY);
-      const instagram = decryptData(data.instagram, PUBLIC_SYS_KEY);
-      const linkedin = decryptData(data.linkedin, PUBLIC_SYS_KEY);
-      const github = decryptData(data.github, PUBLIC_SYS_KEY);
-      const portfolio = decryptData(data.portfolio, PUBLIC_SYS_KEY);
-      const bio = decryptData(data.bio, PUBLIC_SYS_KEY);
-      
-      const avatarSeed = decryptData(data.avatar_url, PUBLIC_SYS_KEY) || name_zh || 'ntu';
-      const avatarUrl = getAvatarUrl(avatarSeed, currentGender);
-
-      const skillsArray = skills ? skills.split(',').map(s => s.trim()).filter(Boolean) : [];
-
-      container.innerHTML = `
-        <div class="space-y-5">
-          <div class="flex items-center justify-between border-b border-indigo-500/20 pb-3">
-            <div class="flex items-center gap-1.5">
-              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span class="text-[10px] font-mono text-cyan-400 tracking-widest uppercase">NTU AI PORTFOLIO</span>
-            </div>
-            <span class="text-[10px] font-mono text-slate-500">#${data.card_id}</span>
-          </div>
-
-          <div class="text-center pt-2 pb-2">
-            <div class="relative inline-block mb-3">
-              <div class="absolute -inset-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-cyan-400 rounded-full blur opacity-50"></div>
-              <div class="relative w-24 h-24 rounded-full bg-slate-900 border-2 border-cyan-400/80 p-1 shadow-2xl overflow-hidden mx-auto">
-                <img src="${avatarUrl}" class="w-full h-full object-cover rounded-full" alt="Avatar">
-              </div>
-            </div>
-
-            <h1 class="text-2xl font-black text-white tracking-tight">${name_zh}</h1>
-            ${name_en ? `<p class="text-xs font-mono text-indigo-300 font-medium mt-0.5">${name_en}</p>` : ''}
-            
-            <p class="text-cyan-400 text-xs font-semibold mt-1.5 flex items-center justify-center gap-1">
-              <i data-lucide="graduation-cap" class="w-3.5 h-3.5"></i>
-              <span>${school} ${department || ''}</span>
-            </p>
-
-            ${titlesArray.length > 0 ? `
-              <div class="mt-2 flex flex-wrap justify-center gap-1.5">
-                ${titlesArray.map(t => `<span class="px-3 py-1 rounded-full bg-indigo-950/80 border border-indigo-700/60 text-xs font-medium text-indigo-200">${t}</span>`).join('')}
-              </div>
-            ` : ''}
-
-            <p class="text-slate-300 text-xs leading-relaxed mt-4 px-2 font-light text-center">${bio || '觀看我的電子名片！'}</p>
-          </div>
-
-          <div class="space-y-3 pt-2">
-            ${experiencesArray.length > 0 ? `
-              <div class="block-card p-3.5 rounded-2xl space-y-2">
-                <div class="flex items-center gap-2 mb-1">
-                  <div class="w-6 h-6 rounded-lg bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-cyan-300">
-                    <i data-lucide="briefcase" class="w-3.5 h-3.5"></i>
-                  </div>
-                  <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Experience / 專案經歷</p>
-                </div>
-                <div class="space-y-1.5 pl-1">
-                  ${experiencesArray.map(exp => `
-                    <div class="flex items-start gap-2">
-                      <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 mt-1.5 shrink-0"></span>
-                      <p class="text-xs font-semibold text-white leading-relaxed">${exp}</p>
-                    </div>
-                  `).join('')}
-                </div>
-              </div>
-            ` : ''}
-
-            ${skillsArray.length > 0 ? `
-              <div class="block-card p-3.5 rounded-2xl">
-                <div class="flex items-center gap-2 mb-2">
-                  <div class="w-6 h-6 rounded-lg bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-indigo-300">
-                    <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
-                  </div>
-                  <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Skills & Expertise</p>
-                </div>
-                <div class="flex flex-wrap gap-1.5">
-                  ${skillsArray.map(skill => `<span class="px-2.5 py-1 bg-indigo-950/90 border border-indigo-800/60 text-cyan-300 rounded-lg text-[11px] font-mono">${skill}</span>`).join('')}
-                </div>
-              </div>
-            ` : ''}
-
-            ${email ? `
-              <a href="mailto:${email}" class="block-card p-3.5 rounded-2xl flex items-center justify-between group">
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-xl bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-pink-400">
-                    <i data-lucide="mail" class="w-5 h-5"></i>
-                  </div>
-                  <div>
-                    <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Email</p>
-                    <p class="text-xs font-semibold text-white">${email}</p>
-                  </div>
-                </div>
-                <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500 group-hover:text-cyan-400 transition-colors"></i>
-              </a>
-            ` : ''}
-
-            ${portfolio ? `
-              <a href="${portfolio}" target="_blank" class="block-card p-3.5 rounded-2xl flex items-center justify-between group">
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-xl bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-cyan-400">
-                    <i data-lucide="globe" class="w-5 h-5"></i>
-                  </div>
-                  <div>
-                    <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Official Website / Portfolio</p>
-                    <p class="text-xs font-semibold text-white truncate max-w-[200px]">${portfolio.replace('https://', '').replace('http://', '')}</p>
-                  </div>
-                </div>
-                <i data-lucide="external-link" class="w-4 h-4 text-slate-500 group-hover:text-cyan-400 transition-colors"></i>
-              </a>
-            ` : ''}
-
-            <div class="grid grid-cols-3 gap-2 pt-1">
-              ${instagram ? `<a href="https://instagram.com/${instagram}" target="_blank" class="block-card p-3 rounded-xl flex flex-col items-center justify-center text-slate-300 hover:text-pink-400"><i data-lucide="instagram" class="w-5 h-5 mb-1"></i><span class="text-[10px] font-mono">Instagram</span></a>` : ''}
-              ${linkedin ? `<a href="${linkedin}" target="_blank" class="block-card p-3 rounded-xl flex flex-col items-center justify-center text-slate-300 hover:text-blue-400"><i data-lucide="linkedin" class="w-5 h-5 mb-1"></i><span class="text-[10px] font-mono">LinkedIn</span></a>` : ''}
-              ${github ? `<a href="https://github.com/${github}" target="_blank" class="block-card p-3 rounded-xl flex flex-col items-center justify-center text-slate-300 hover:text-purple-400"><i data-lucide="github" class="w-5 h-5 mb-1"></i><span class="text-[10px] font-mono">GitHub</span></a>` : ''}
-            </div>
-          </div>
-
-          <!-- 下方編輯按鈕：需驗證 PIN 碼 -->
-          <div class="pt-3">
-            <button onclick="promptEditWithPin()" class="w-full py-2.5 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/50 text-cyan-300 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-lg">
-              <i data-lucide="edit-3" class="w-4 h-4"></i> ✏️ 編輯電子名片
-            </button>
-          </div>
-
-          <footer class="text-center pt-2">
-            <p class="text-[10px] font-mono text-slate-600">POWERED BY NTU AI SOCIETY • NFC CARD</p>
-          </footer>
+    <form onsubmit="saveCard(event)" class="space-y-4">
+      <!-- 頭像選擇區塊 -->
+      <div class="flex flex-col items-center justify-center mb-2">
+        <div class="relative w-20 h-20 rounded-full bg-slate-900 border-2 border-cyan-400 p-1 mb-2 shadow-lg shadow-cyan-500/20">
+          <img id="avatarPreview" src="${getAvatarUrl(currentAvatarSeed)}" class="w-full h-full object-cover rounded-full" alt="Avatar">
         </div>
-      `;
-      if (window.lucide) lucide.createIcons();
+        <button type="button" onclick="randomizeAvatar()" class="text-xs text-cyan-300 flex items-center gap-1 bg-indigo-950/80 hover:bg-indigo-900 px-3 py-1 rounded-full border border-indigo-700/50 transition-all">
+          <i data-lucide="refresh-cw" class="w-3 h-3"></i> 換個造型/表情
+        </button>
+      </div>
+
+      <!-- 隱私設定：設定密碼 -->
+      <div class="bg-indigo-950/50 border border-indigo-500/30 p-3 rounded-xl space-y-1">
+        <label class="block text-xs font-bold text-cyan-300">🔐 設定個人編輯管理 PIN 碼 *</label>
+        <input type="password" id="pin_code" required value="${existingData?.pin_code || ''}" placeholder="請輸入 4-8 位數字密碼" class="w-full bg-slate-950/80 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-cyan-400 font-mono">
+        <p class="text-[10px] text-slate-400">只有名片主人輸入此 PIN 碼才能進行修改。</p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-indigo-200 mb-1">中文姓名 *</label>
+          <input type="text" id="name_zh" required value="${existingData?.name_zh || ''}" placeholder="王小明" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-indigo-200 mb-1">英文姓名</label>
+          <input type="text" id="name_en" value="${existingData?.name_en || ''}" placeholder="Ian Wang" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-indigo-200 mb-1">學校 / 單位 *</label>
+          <input type="text" id="school" value="${existingData?.school || ''}" placeholder="國立臺灣大學" required class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-indigo-200 mb-1">系所 / 部門</label>
+          <input type="text" id="department" value="${existingData?.department || ''}" placeholder="資訊工程學系" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+        </div>
+      </div>
+
+      <!-- 動態多筆社團職位區域 -->
+      <div class="space-y-2 pt-1">
+        <div class="flex items-center justify-between">
+          <label class="block text-xs font-medium text-indigo-200">社團職位 / 身份標籤</label>
+          <button type="button" onclick="addTitleInput()" class="text-[11px] text-cyan-300 font-semibold flex items-center gap-1 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/50 px-2.5 py-1 rounded-lg transition-all">
+            <i data-lucide="plus" class="w-3.5 h-3.5 text-cyan-400"></i> 新增職位
+          </button>
+        </div>
+        <div id="titleContainer" class="space-y-2">
+          ${titles.map(t => `
+            <div class="flex items-center gap-2 title-item">
+              <input type="text" value="${t}" placeholder="例：NTU AI/社長" class="title-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+              <button type="button" onclick="removeTitleInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              </button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- 動態多筆經歷新增區域 -->
+      <div class="space-y-2 pt-1">
+        <div class="flex items-center justify-between">
+          <label class="block text-xs font-medium text-indigo-200">重要經歷 / 專案亮點</label>
+          <button type="button" onclick="addExperienceInput()" class="text-[11px] text-cyan-300 font-semibold flex items-center gap-1 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/50 px-2.5 py-1 rounded-lg transition-all">
+            <i data-lucide="plus" class="w-3.5 h-3.5 text-cyan-400"></i> 新增經歷
+          </button>
+        </div>
+        <div id="experienceContainer" class="space-y-2">
+          ${experiences.map(exp => `
+            <div class="flex items-center gap-2 exp-item">
+              <input type="text" value="${exp}" placeholder="例：台積電 軟體實習工程師" class="exp-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+              <button type="button" onclick="removeExperienceInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              </button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-indigo-200 mb-1">專業技能 (逗號分開)</label>
+        <input type="text" id="skills" value="${existingData?.skills || ''}" placeholder="Python, Marketing, FinTech" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+      </div>
+
+      <div class="space-y-2 pt-2">
+        <label class="block text-xs font-medium text-indigo-400 uppercase tracking-wider font-mono">聯絡與社群連結</label>
+        <input type="email" id="email" value="${existingData?.email || ''}" placeholder="電子信箱" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+        <input type="text" id="instagram" value="${existingData?.instagram || ''}" placeholder="Instagram 帳號" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+        <input type="url" id="linkedin" value="${existingData?.linkedin || ''}" placeholder="LinkedIn 個人頁面網址" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+        <input type="text" id="github" value="${existingData?.github || ''}" placeholder="GitHub 帳號" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+        <input type="url" id="portfolio" value="${existingData?.portfolio || ''}" placeholder="個人作品集 / 官網網址" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+      </div>
+
+      <div class="pt-2">
+        <div class="flex items-center justify-between mb-1">
+          <label class="block text-xs font-medium text-indigo-200">About Me (故事簡介)</label>
+          <button type="button" id="geminiBtn" onclick="generateGeminiBio()" class="text-xs text-cyan-300 font-semibold flex items-center gap-1 bg-gradient-to-r from-indigo-900 to-purple-900 border border-cyan-500/40 px-2.5 py-1 rounded-lg transition-all">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-cyan-400"></i>
+            <span id="geminiBtnText">✨ 依經歷生成</span>
+          </button>
+        </div>
+        <textarea id="bio" rows="3" placeholder="填寫經歷後點擊生成..." class="w-full bg-slate-950/70 border border-slate-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-purple-500 resize-none leading-relaxed">${existingData?.bio || ''}</textarea>
+      </div>
+
+      <button type="submit" id="submitBtn" class="w-full py-3.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-500 hover:opacity-95 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 mt-4 transition-all">
+        🚀 加密並發佈個人網站
+      </button>
+    </form>
+  `;
+  if (window.lucide) lucide.createIcons();
+}
+
+function addTitleInput() {
+  const container = document.getElementById('titleContainer');
+  const div = document.createElement('div');
+  div.className = 'flex items-center gap-2 title-item';
+  div.innerHTML = `
+    <input type="text" placeholder="例：NTU AI 社長 / 區塊鏈社 技術部長" class="title-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+    <button type="button" onclick="removeTitleInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
+      <i data-lucide="trash-2" class="w-4 h-4"></i>
+    </button>
+  `;
+  container.appendChild(div);
+  if (window.lucide) lucide.createIcons();
+}
+
+function removeTitleInput(btn) {
+  const container = document.getElementById('titleContainer');
+  if (container.children.length > 1) {
+    btn.closest('.title-item').remove();
+  } else {
+    btn.closest('.title-item').querySelector('input').value = '';
+  }
+}
+
+function addExperienceInput() {
+  const container = document.getElementById('experienceContainer');
+  const div = document.createElement('div');
+  div.className = 'flex items-center gap-2 exp-item';
+  div.innerHTML = `
+    <input type="text" placeholder="例：台積電實習生 / ATCC 決賽團隊" class="exp-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+    <button type="button" onclick="removeExperienceInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
+      <i data-lucide="trash-2" class="w-4 h-4"></i>
+    </button>
+  `;
+  container.appendChild(div);
+  if (window.lucide) lucide.createIcons();
+}
+
+function removeExperienceInput(btn) {
+  const container = document.getElementById('experienceContainer');
+  if (container.children.length > 1) {
+    btn.closest('.exp-item').remove();
+  } else {
+    btn.closest('.exp-item').querySelector('input').value = '';
+  }
+}
+
+function randomizeAvatar() {
+  currentAvatarSeed = `seed-${Math.random().toString(36).substring(7)}`;
+  document.getElementById('avatarPreview').src = getAvatarUrl(currentAvatarSeed);
+}
+
+async function generateGeminiBio() {
+  const bioInput = document.getElementById('bio');
+  const btn = document.getElementById('geminiBtn');
+  const btnText = document.getElementById('geminiBtnText');
+  
+  const name = document.getElementById('name_zh').value || '社團成員';
+  const school = document.getElementById('school').value || '國立臺灣大學';
+  const dept = document.getElementById('department').value || '';
+  
+  const titleInputs = document.querySelectorAll('.title-input');
+  const titleArray = Array.from(titleInputs).map(i => i.value.trim()).filter(Boolean);
+  const title = titleArray.join('、');
+  
+  const expInputs = document.querySelectorAll('.exp-input');
+  const expArray = Array.from(expInputs).map(i => i.value.trim()).filter(Boolean);
+  const exp = expArray.join('、');
+  
+  const skills = document.getElementById('skills').value || '';
+
+  btn.disabled = true;
+  btn.classList.add('opacity-50', 'cursor-not-allowed');
+  btnText.innerText = "生成中...";
+  bioInput.value = "⚡ AI 正在分析你的經歷亮點，撰寫個人故事中...";
+
+  try {
+    const response = await fetch('/api/generate-bio', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, school, dept, title, exp, skills })
+    });
+    const data = await response.json();
+    if (response.ok && data.text) {
+      bioInput.value = data.text.trim();
+    } else {
+      throw new Error('API request failed');
     }
+  } catch (e) {
+    let fallbackBio = `我是來自 ${school}${dept ? ' ' + dept : ''} 的 ${name}。`;
+    if (title) fallbackBio += `目前擔任 ${title}。`;
+    if (exp) fallbackBio += `專注於 ${exp} 等領域的實踐與探索，`;
+    if (skills) fallbackBio += `並具備 ${skills} 等核心能力。`;
+    fallbackBio += `熱衷於持續學習與跨領域挑戰，探索更多創新的可能性！`;
+    bioInput.value = fallbackBio;
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+    btnText.innerText = "✨ 依經歷生成";
+  }
+}
 
-    function promptEditWithPin() {
-      const pin = prompt('🔐 請輸入建立名片時設定的 PIN 碼以進行編輯：');
-      if (!pin) return;
+function renderCard(data, container) {
+  const name_zh = decryptData(data.name_zh, PUBLIC_SYS_KEY);
+  const name_en = decryptData(data.name_en, PUBLIC_SYS_KEY);
+  const school = decryptData(data.school, PUBLIC_SYS_KEY);
+  const department = decryptData(data.department, PUBLIC_SYS_KEY);
+  const email = decryptData(data.email, PUBLIC_SYS_KEY);
+  
+  let titlesArray = [];
+  try {
+    const rawTitle = decryptData(data.title, PUBLIC_SYS_KEY);
+    titlesArray = JSON.parse(rawTitle);
+    if (!Array.isArray(titlesArray)) titlesArray = [rawTitle];
+  } catch (e) {
+    const rawTitle = decryptData(data.title, PUBLIC_SYS_KEY);
+    if (rawTitle) titlesArray = [rawTitle];
+  }
 
-      const hashedInput = hashPin(pin);
-      if (currentCardData && currentCardData.pin_hash && currentCardData.pin_hash !== hashedInput) {
-        alert('❌ PIN 碼不正確！只有名片主人可以編輯。');
-        return;
-      }
+  let experiencesArray = [];
+  try {
+    const rawExp = decryptData(data.experience, PUBLIC_SYS_KEY);
+    experiencesArray = JSON.parse(rawExp);
+    if (!Array.isArray(experiencesArray)) experiencesArray = [rawExp];
+  } catch (e) {
+    const rawExp = decryptData(data.experience, PUBLIC_SYS_KEY);
+    if (rawExp) experiencesArray = [rawExp];
+  }
 
-      // 驗證成功，解密職位與經歷陣列
-      let titlesArray = [];
-      try {
-        const rawTitle = decryptData(currentCardData.title, PUBLIC_SYS_KEY);
-        titlesArray = JSON.parse(rawTitle);
-      } catch (e) {
-        const rawTitle = decryptData(currentCardData.title, PUBLIC_SYS_KEY);
-        if (rawTitle) titlesArray = [rawTitle];
-      }
+  const skills = decryptData(data.skills, PUBLIC_SYS_KEY);
+  const instagram = decryptData(data.instagram, PUBLIC_SYS_KEY);
+  const linkedin = decryptData(data.linkedin, PUBLIC_SYS_KEY);
+  const github = decryptData(data.github, PUBLIC_SYS_KEY);
+  const portfolio = decryptData(data.portfolio, PUBLIC_SYS_KEY);
+  const bio = decryptData(data.bio, PUBLIC_SYS_KEY);
+  const avatarSeed = decryptData(data.avatar_url, PUBLIC_SYS_KEY) || name_zh || 'ntu';
+  const avatarUrl = getAvatarUrl(avatarSeed);
+  const skillsArray = skills ? skills.split(',').map(s => s.trim()).filter(Boolean) : [];
 
-      let experiencesArray = [];
-      try {
-        const rawExp = decryptData(currentCardData.experience, PUBLIC_SYS_KEY);
-        experiencesArray = JSON.parse(rawExp);
-      } catch (e) {
-        const rawExp = decryptData(currentCardData.experience, PUBLIC_SYS_KEY);
-        if (rawExp) experiencesArray = [rawExp];
-      }
+  container.innerHTML = `
+    <div class="space-y-5">
+      <div class="flex items-center justify-between border-b border-indigo-500/20 pb-3">
+        <div class="flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="text-[10px] font-mono text-cyan-400 tracking-widest uppercase">NTU AI PORTFOLIO</span>
+        </div>
+        <span class="text-[10px] font-mono text-slate-500">#${data.card_id}</span>
+      </div>
 
-      const decryptedData = {
-        card_id: currentCardData.card_id,
-        pin_code: pin,
-        name_zh: decryptData(currentCardData.name_zh, PUBLIC_SYS_KEY),
-        name_en: decryptData(currentCardData.name_en, PUBLIC_SYS_KEY),
-        school: decryptData(currentCardData.school, PUBLIC_SYS_KEY),
-        department: decryptData(currentCardData.department, PUBLIC_SYS_KEY),
-        titles: titlesArray,
-        experiences: experiencesArray,
-        skills: decryptData(currentCardData.skills, PUBLIC_SYS_KEY),
-        email: decryptData(currentCardData.email, PUBLIC_SYS_KEY),
-        instagram: decryptData(currentCardData.instagram, PUBLIC_SYS_KEY),
-        linkedin: decryptData(currentCardData.linkedin, PUBLIC_SYS_KEY),
-        github: decryptData(currentCardData.github, PUBLIC_SYS_KEY),
-        portfolio: decryptData(currentCardData.portfolio, PUBLIC_SYS_KEY),
-        bio: decryptData(currentCardData.bio, PUBLIC_SYS_KEY),
-        avatar_url: decryptData(currentCardData.avatar_url, PUBLIC_SYS_KEY)
-      };
+      <div class="text-center pt-2 pb-2">
+        <div class="relative inline-block mb-3">
+          <div class="absolute -inset-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-cyan-400 rounded-full blur opacity-50"></div>
+          <div class="relative w-24 h-24 rounded-full bg-slate-900 border-2 border-cyan-400/80 p-1 shadow-2xl overflow-hidden mx-auto">
+            <img src="${avatarUrl}" class="w-full h-full object-cover rounded-full" alt="Avatar">
+          </div>
+        </div>
+        <h1 class="text-2xl font-black text-white tracking-tight">${name_zh}</h1>
+        ${name_en ? `<p class="text-xs font-mono text-indigo-300 font-medium mt-0.5">${name_en}</p>` : ''}
+        <p class="text-cyan-400 text-xs font-semibold mt-1.5 flex items-center justify-center gap-1">
+          <i data-lucide="graduation-cap" class="w-3.5 h-3.5"></i>
+          <span>${school} ${department || ''}</span>
+        </p>
+        ${titlesArray.length > 0 ? `
+          <div class="mt-2 flex flex-wrap justify-center gap-1.5">
+            ${titlesArray.map(t => `<span class="px-3 py-1 rounded-full bg-indigo-950/80 border border-indigo-700/60 text-xs font-medium text-indigo-200">${t}</span>`).join('')}
+          </div>
+        ` : ''}
+        <p class="text-slate-300 text-xs leading-relaxed mt-4 px-2 font-light text-center">${bio || '觀看我的電子名片！'}</p>
+      </div>
 
-      renderForm(currentCardData.card_id, document.getElementById('content'), decryptedData);
+      <div class="space-y-3 pt-2">
+        ${experiencesArray.length > 0 ? `
+          <div class="block-card p-3.5 rounded-2xl space-y-2">
+            <div class="flex items-center gap-2 mb-1">
+              <div class="w-6 h-6 rounded-lg bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-cyan-300">
+                <i data-lucide="briefcase" class="w-3.5 h-3.5"></i>
+              </div>
+              <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Experience / 專案經歷</p>
+            </div>
+            <div class="space-y-1.5 pl-1">
+              ${experiencesArray.map(exp => `
+                <div class="flex items-start gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 mt-1.5 shrink-0"></span>
+                  <p class="text-xs font-semibold text-white leading-relaxed">${exp}</p>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        ${skillsArray.length > 0 ? `
+          <div class="block-card p-3.5 rounded-2xl">
+            <div class="flex items-center gap-2 mb-2">
+              <div class="w-6 h-6 rounded-lg bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-indigo-300">
+                <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
+              </div>
+              <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Skills & Expertise</p>
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              ${skillsArray.map(skill => `<span class="px-2.5 py-1 bg-indigo-950/90 border border-indigo-800/60 text-cyan-300 rounded-lg text-[11px] font-mono">${skill}</span>`).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        ${email ? `
+          <a href="mailto:${email}" class="block-card p-3.5 rounded-2xl flex items-center justify-between group">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-pink-400">
+                <i data-lucide="mail" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Email</p>
+                <p class="text-xs font-semibold text-white">${email}</p>
+              </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500 group-hover:text-cyan-400 transition-colors"></i>
+          </a>
+        ` : ''}
+
+        ${portfolio ? `
+          <a href="${portfolio}" target="_blank" class="block-card p-3.5 rounded-2xl flex items-center justify-between group">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-cyan-400">
+                <i data-lucide="globe" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Official Website / Portfolio</p>
+                <p class="text-xs font-semibold text-white truncate max-w-[200px]">${portfolio.replace('https://', '').replace('http://', '')}</p>
+              </div>
+            </div>
+            <i data-lucide="external-link" class="w-4 h-4 text-slate-500 group-hover:text-cyan-400 transition-colors"></i>
+          </a>
+        ` : ''}
+
+        <div class="grid grid-cols-3 gap-2 pt-1">
+          ${instagram ? `<a href="https://instagram.com/${instagram}" target="_blank" class="block-card p-3 rounded-xl flex flex-col items-center justify-center text-slate-300 hover:text-pink-400"><i data-lucide="instagram" class="w-5 h-5 mb-1"></i><span class="text-[10px] font-mono">Instagram</span></a>` : ''}
+          ${linkedin ? `<a href="${linkedin}" target="_blank" class="block-card p-3 rounded-xl flex flex-col items-center justify-center text-slate-300 hover:text-blue-400"><i data-lucide="linkedin" class="w-5 h-5 mb-1"></i><span class="text-[10px] font-mono">LinkedIn</span></a>` : ''}
+          ${github ? `<a href="https://github.com/${github}" target="_blank" class="block-card p-3 rounded-xl flex flex-col items-center justify-center text-slate-300 hover:text-purple-400"><i data-lucide="github" class="w-5 h-5 mb-1"></i><span class="text-[10px] font-mono">GitHub</span></a>` : ''}
+        </div>
+      </div>
+
+      <!-- 下方編輯按鈕：需驗證 PIN 碼 -->
+      <div class="pt-3">
+        <button onclick="promptEditWithPin()" class="w-full py-2.5 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/50 text-cyan-300 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-lg">
+          <i data-lucide="edit-3" class="w-4 h-4"></i> ✏️ 編輯電子名片
+        </button>
+      </div>
+
+      <footer class="text-center pt-2">
+        <p class="text-[10px] font-mono text-slate-600">POWERED BY NTU AI SOCIETY • NFC CARD</p>
+      </footer>
+    </div>
+  `;
+  if (window.lucide) lucide.createIcons();
+}
+
+function promptEditWithPin() {
+  const pin = prompt('🔐 請輸入建立名片時設定的 PIN 碼以進行編輯：');
+  if (!pin) return;
+  const hashedInput = hashPin(pin);
+  if (currentCardData && currentCardData.pin_hash && currentCardData.pin_hash !== hashedInput) {
+    alert('❌ PIN 碼不正確！只有名片主人可以編輯。');
+    return;
+  }
+
+  let titlesArray = [];
+  try {
+    const rawTitle = decryptData(currentCardData.title, PUBLIC_SYS_KEY);
+    titlesArray = JSON.parse(rawTitle);
+  } catch (e) {
+    const rawTitle = decryptData(currentCardData.title, PUBLIC_SYS_KEY);
+    if (rawTitle) titlesArray = [rawTitle];
+  }
+
+  let experiencesArray = [];
+  try {
+    const rawExp = decryptData(currentCardData.experience, PUBLIC_SYS_KEY);
+    experiencesArray = JSON.parse(rawExp);
+  } catch (e) {
+    const rawExp = decryptData(currentCardData.experience, PUBLIC_SYS_KEY);
+    if (rawExp) experiencesArray = [rawExp];
+  }
+
+  const decryptedData = {
+    card_id: currentCardData.card_id,
+    pin_code: pin,
+    name_zh: decryptData(currentCardData.name_zh, PUBLIC_SYS_KEY),
+    name_en: decryptData(currentCardData.name_en, PUBLIC_SYS_KEY),
+    school: decryptData(currentCardData.school, PUBLIC_SYS_KEY),
+    department: decryptData(currentCardData.department, PUBLIC_SYS_KEY),
+    titles: titlesArray,
+    experiences: experiencesArray,
+    skills: decryptData(currentCardData.skills, PUBLIC_SYS_KEY),
+    email: decryptData(currentCardData.email, PUBLIC_SYS_KEY),
+    instagram: decryptData(currentCardData.instagram, PUBLIC_SYS_KEY),
+    linkedin: decryptData(currentCardData.linkedin, PUBLIC_SYS_KEY),
+    github: decryptData(currentCardData.github, PUBLIC_SYS_KEY),
+    portfolio: decryptData(currentCardData.portfolio, PUBLIC_SYS_KEY),
+    bio: decryptData(currentCardData.bio, PUBLIC_SYS_KEY),
+    avatar_url: decryptData(currentCardData.avatar_url, PUBLIC_SYS_KEY)
+  };
+
+  renderForm(currentCardData.card_id, document.getElementById('content'), decryptedData);
+}
+
+async function saveCard(e) {
+  e.preventDefault();
+  const submitBtn = document.getElementById('submitBtn');
+  submitBtn.innerText = '正在加密並發佈...';
+  submitBtn.disabled = true;
+
+  const pinKey = document.getElementById('pin_code').value;
+  const urlParams = new URLSearchParams(window.location.search);
+  const redirectPath = urlParams.get('p');
+  let path = redirectPath ? redirectPath : window.location.pathname;
+  let pathSegments = path.split('/').filter(Boolean);
+  let cardId = pathSegments[pathSegments.length - 1] || '001';
+  if (cardId === 'c' || !cardId) cardId = '001';
+
+  const titleInputs = document.querySelectorAll('.title-input');
+  const titlesArray = Array.from(titleInputs).map(i => i.value.trim()).filter(Boolean);
+
+  const expInputs = document.querySelectorAll('.exp-input');
+  const experiencesArray = Array.from(expInputs).map(i => i.value.trim()).filter(Boolean);
+
+  const cardData = {
+    card_id: cardId,
+    is_active: true,
+    pin_hash: hashPin(pinKey),
+    name_zh: encryptData(document.getElementById('name_zh').value, PUBLIC_SYS_KEY),
+    name_en: encryptData(document.getElementById('name_en').value, PUBLIC_SYS_KEY),
+    school: encryptData(document.getElementById('school').value, PUBLIC_SYS_KEY),
+    department: encryptData(document.getElementById('department').value, PUBLIC_SYS_KEY),
+    title: encryptData(JSON.stringify(titlesArray), PUBLIC_SYS_KEY),
+    experience: encryptData(JSON.stringify(experiencesArray), PUBLIC_SYS_KEY),
+    skills: encryptData(document.getElementById('skills').value, PUBLIC_SYS_KEY),
+    email: encryptData(document.getElementById('email').value, PUBLIC_SYS_KEY),
+    instagram: encryptData(document.getElementById('instagram').value, PUBLIC_SYS_KEY),
+    linkedin: encryptData(document.getElementById('linkedin').value, PUBLIC_SYS_KEY),
+    github: encryptData(document.getElementById('github').value, PUBLIC_SYS_KEY),
+    portfolio: encryptData(document.getElementById('portfolio').value, PUBLIC_SYS_KEY),
+    bio: encryptData(document.getElementById('bio').value, PUBLIC_SYS_KEY),
+    avatar_url: encryptData(currentAvatarSeed, PUBLIC_SYS_KEY)
+  };
+
+  if (supabaseClient) {
+    const { error } = await supabaseClient.from('cards').upsert(cardData);
+    if (error) {
+      alert('儲存失敗：' + error.message);
+      submitBtn.innerText = '🚀 發佈電子名片';
+      submitBtn.disabled = false;
+      return;
     }
+  }
 
-    async function saveCard(e) {
-      e.preventDefault();
-      const submitBtn = document.getElementById('submitBtn');
-      submitBtn.innerText = '正在加密並發佈...';
-      submitBtn.disabled = true;
+  alert('🎉 電子名片加密發佈成功！');
+  location.reload();
+}
 
-      const pinKey = document.getElementById('pin_code').value;
-
-      const urlParams = new URLSearchParams(window.location.search);
-      const redirectPath = urlParams.get('p');
-      let path = redirectPath ? redirectPath : window.location.pathname;
-      let pathSegments = path.split('/').filter(Boolean);
-
-      let cardId = pathSegments[pathSegments.length - 1] || '001';
-      if (cardId === 'c' || !cardId) cardId = '001';
-
-      // 收集多筆職位與多筆經歷資料
-      const titleInputs = document.querySelectorAll('.title-input');
-      const titlesArray = Array.from(titleInputs).map(i => i.value.trim()).filter(Boolean);
-
-      const expInputs = document.querySelectorAll('.exp-input');
-      const experiencesArray = Array.from(expInputs).map(i => i.value.trim()).filter(Boolean);
-
-      // Supabase 後台資料全欄位 AES 加密處理
-      const cardData = {
-        card_id: cardId,
-        is_active: true,
-        pin_hash: hashPin(pinKey),
-        name_zh: encryptData(document.getElementById('name_zh').value, PUBLIC_SYS_KEY),
-        name_en: encryptData(document.getElementById('name_en').value, PUBLIC_SYS_KEY),
-        school: encryptData(document.getElementById('school').value, PUBLIC_SYS_KEY),
-        department: encryptData(document.getElementById('department').value, PUBLIC_SYS_KEY),
-        title: encryptData(JSON.stringify(titlesArray), PUBLIC_SYS_KEY),
-        experience: encryptData(JSON.stringify(experiencesArray), PUBLIC_SYS_KEY),
-        skills: encryptData(document.getElementById('skills').value, PUBLIC_SYS_KEY),
-        email: encryptData(document.getElementById('email').value, PUBLIC_SYS_KEY),
-        instagram: encryptData(document.getElementById('instagram').value, PUBLIC_SYS_KEY),
-        linkedin: encryptData(document.getElementById('linkedin').value, PUBLIC_SYS_KEY),
-        github: encryptData(document.getElementById('github').value, PUBLIC_SYS_KEY),
-        portfolio: encryptData(document.getElementById('portfolio').value, PUBLIC_SYS_KEY),
-        bio: encryptData(document.getElementById('bio').value, PUBLIC_SYS_KEY),
-        avatar_url: encryptData(currentAvatarSeed, PUBLIC_SYS_KEY)
-      };
-
-      if (supabaseClient) {
-        const { error } = await supabaseClient.from('cards').upsert(cardData);
-        if (error) {
-          alert('儲存失敗：' + error.message);
-          submitBtn.innerText = '🚀 發佈電子名片';
-          submitBtn.disabled = false;
-          return;
-        }
-      }
-
-      alert('🎉 電子名片加密發佈成功！');
-      location.reload();
-    }
-
-    window.onload = init;
-  </script>
+window.onload = init;
+</script>
 </body>
 </html>
