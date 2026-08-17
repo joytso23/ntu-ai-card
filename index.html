@@ -7,35 +7,34 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/lucide@latest"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<!-- 引入加密庫 CryptoJS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 <style>
 @keyframes glowPulse {
-0%, 100% { opacity: 0.35; transform: scale(1); }
-50% { opacity: 0.65; transform: scale(1.08); }
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50% { opacity: 0.65; transform: scale(1.08); }
 }
 .animate-glow { animation: glowPulse 7s infinite ease-in-out; }
 .block-card {
-background: rgba(15, 23, 42, 0.75);
-backdrop-filter: blur(12px);
-border: 1px solid rgba(99, 102, 241, 0.25);
-transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .block-card:hover {
-border-color: rgba(6, 182, 212, 0.6);
-transform: translateY(-2px);
-box-shadow: 0 10px 25px -5px rgba(6, 182, 212, 0.15);
+  border-color: rgba(6, 182, 212, 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(6, 182, 212, 0.15);
 }
 </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center justify-center p-4 selection:bg-cyan-500 selection:text-white relative overflow-x-hidden">
 <div class="fixed top-[-10%] left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-gradient-to-tr from-indigo-900/40 via-purple-900/30 to-cyan-500/20 blur-[120px] pointer-events-none rounded-full animate-glow"></div>
 <div id="app" class="w-full max-w-md bg-slate-900/80 backdrop-blur-2xl border border-indigo-500/20 rounded-[2.5rem] p-6 shadow-2xl relative z-10 my-6">
-<div id="loading" class="text-center py-16">
-<div class="w-10 h-10 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-<p class="text-slate-400 font-mono text-xs tracking-widest animate-pulse">LOADING SECURE PORTFOLIO...</p>
-</div>
-<div id="content" class="hidden"></div>
+  <div id="loading" class="text-center py-16">
+    <div class="w-10 h-10 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+    <p class="text-slate-400 font-mono text-xs tracking-widest animate-pulse">LOADING SECURE PORTFOLIO...</p>
+  </div>
+  <div id="content" class="hidden"></div>
 </div>
 
 <script>
@@ -46,9 +45,9 @@ const PUBLIC_SYS_KEY = 'NTU_AI_CARD_PUBLIC_SYSTEM_KEY_2026';
 let supabaseClient = null;
 let currentAvatarSeed = 'ntu-ai';
 let currentCardData = null;
-let currentLang = 'zh'; // 預設語言：'zh' 或 'en'
+let currentLang = 'zh'; 
+let translatedCache = {}; // 存放翻譯後的快取
 
-// 語系字典
 const i18n = {
   zh: {
     cardNo: "卡片編號：",
@@ -91,7 +90,8 @@ const i18n = {
     pinPrompt: "🔐 請輸入建立名片時設定的 PIN 碼以進行編輯：",
     pinError: "❌ PIN 碼不正確！只有名片主人可以編輯。",
     saveSuccess: "🎉 電子名片加密發布成功！",
-    saveFail: "儲存失敗："
+    saveFail: "儲存失敗：",
+    translating: "🤖 正在翻譯名片內容..."
   },
   en: {
     cardNo: "Card ID: ",
@@ -134,7 +134,8 @@ const i18n = {
     pinPrompt: "🔐 Enter your PIN code to edit this card:",
     pinError: "❌ Incorrect PIN! Access denied.",
     saveSuccess: "🎉 E-Card published successfully!",
-    saveFail: "Save failed: "
+    saveFail: "Save failed: ",
+    translating: "🤖 Translating card content..."
   }
 };
 
@@ -142,17 +143,16 @@ function t(key) {
   return i18n[currentLang][key] || key;
 }
 
-function toggleLanguage() {
+async function toggleLanguage() {
   currentLang = currentLang === 'zh' ? 'en' : 'zh';
   const container = document.getElementById('content');
   if (currentCardData && currentCardData.is_active) {
-    renderCard(currentCardData, container);
+    await renderCard(currentCardData, container);
   } else {
     renderForm('001', container);
   }
 }
 
-// AES 加密與解密工具
 function encryptData(text, key) {
   if (!text) return '';
   return CryptoJS.AES.encrypt(text, key).toString();
@@ -198,7 +198,7 @@ async function init() {
     contentDiv.classList.remove('hidden');
     
     if (currentCardData && currentCardData.is_active) {
-      renderCard(currentCardData, contentDiv);
+      await renderCard(currentCardData, contentDiv);
     } else {
       renderForm(cardId, contentDiv);
     }
@@ -210,6 +210,212 @@ async function init() {
 function getAvatarUrl(seed) {
   if (seed.startsWith('http')) return seed;
   return `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(seed)}`;
+}
+
+// 自動翻譯核心函式
+async function translateCardData(rawObj, targetLang) {
+  const cacheKey = targetLang;
+  if (translatedCache[cacheKey]) {
+    return translatedCache[cacheKey];
+  }
+
+  try {
+    const response = await fetch('/api/translate-card', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: rawObj, targetLang })
+    });
+    if (response.ok) {
+      const resData = await response.json();
+      translatedCache[cacheKey] = resData.translated;
+      return resData.translated;
+    }
+  } catch (e) {
+    console.warn("Translation API not available, fallback to original.");
+  }
+
+  return rawObj; 
+}
+
+async function renderCard(data, container) {
+  const name_zh = decryptData(data.name_zh, PUBLIC_SYS_KEY);
+  const name_en = decryptData(data.name_en, PUBLIC_SYS_KEY);
+  const school = decryptData(data.school, PUBLIC_SYS_KEY);
+  const department = decryptData(data.department, PUBLIC_SYS_KEY);
+  const email = decryptData(data.email, PUBLIC_SYS_KEY);
+  
+  let titlesArray = [];
+  try {
+    const rawTitle = decryptData(data.title, PUBLIC_SYS_KEY);
+    titlesArray = JSON.parse(rawTitle);
+    if (!Array.isArray(titlesArray)) titlesArray = [rawTitle];
+  } catch (e) {
+    const rawTitle = decryptData(data.title, PUBLIC_SYS_KEY);
+    if (rawTitle) titlesArray = [rawTitle];
+  }
+
+  let experiencesArray = [];
+  try {
+    const rawExp = decryptData(data.experience, PUBLIC_SYS_KEY);
+    experiencesArray = JSON.parse(rawExp);
+    if (!Array.isArray(experiencesArray)) experiencesArray = [rawExp];
+  } catch (e) {
+    const rawExp = decryptData(data.experience, PUBLIC_SYS_KEY);
+    if (rawExp) experiencesArray = [rawExp];
+  }
+
+  const skills = decryptData(data.skills, PUBLIC_SYS_KEY);
+  const instagram = decryptData(data.instagram, PUBLIC_SYS_KEY);
+  const linkedin = decryptData(data.linkedin, PUBLIC_SYS_KEY);
+  const github = decryptData(data.github, PUBLIC_SYS_KEY);
+  const portfolio = decryptData(data.portfolio, PUBLIC_SYS_KEY);
+  const bio = decryptData(data.bio, PUBLIC_SYS_KEY);
+  const avatarSeed = decryptData(data.avatar_url, PUBLIC_SYS_KEY) || name_zh || 'ntu';
+  const avatarUrl = getAvatarUrl(avatarSeed);
+
+  let displayData = {
+    displayName: currentLang === 'en' ? (name_en || name_zh) : name_zh,
+    subName: currentLang === 'en' ? (name_en ? name_zh : '') : name_en,
+    school,
+    department,
+    titles: titlesArray,
+    experiences: experiencesArray,
+    bio
+  };
+
+  // 當切換為英文且快取無英文資料時，進行即時翻譯
+  if (currentLang === 'en') {
+    // 顯示微型載入指示器
+    container.innerHTML = `
+      <div class="text-center py-12">
+        <div class="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+        <p class="text-slate-400 font-mono text-xs animate-pulse">${t('translating')}</p>
+      </div>
+    `;
+    displayData = await translateCardData(displayData, 'en');
+  }
+
+  const skillsArray = skills ? skills.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+  container.innerHTML = `
+    <div class="space-y-5">
+      <div class="flex items-center justify-between border-b border-indigo-500/20 pb-3">
+        <div class="flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="text-[10px] font-mono text-cyan-400 tracking-widest uppercase">NTU AI PORTFOLIO</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="toggleLanguage()" class="text-[10px] font-mono bg-indigo-950/80 hover:bg-indigo-900 border border-cyan-500/40 text-cyan-300 px-2 py-0.5 rounded-full transition-all flex items-center gap-1">
+            <i data-lucide="globe" class="w-3 h-3"></i> ${currentLang === 'zh' ? 'EN' : '繁中'}
+          </button>
+          <span class="text-[10px] font-mono text-slate-500">#${data.card_id}</span>
+        </div>
+      </div>
+
+      <div class="text-center pt-2 pb-2">
+        <div class="relative inline-block mb-3">
+          <div class="absolute -inset-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-cyan-400 rounded-full blur opacity-50"></div>
+          <div class="relative w-24 h-24 rounded-full bg-slate-900 border-2 border-cyan-400/80 p-1 shadow-2xl overflow-hidden mx-auto">
+            <img src="${avatarUrl}" class="w-full h-full object-cover rounded-full" alt="Avatar">
+          </div>
+        </div>
+        <h1 class="text-2xl font-black text-white tracking-tight">${displayData.displayName}</h1>
+        ${displayData.subName ? `<p class="text-xs font-mono text-indigo-300 font-medium mt-0.5">${displayData.subName}</p>` : ''}
+        <p class="text-cyan-400 text-xs font-semibold mt-1.5 flex items-center justify-center gap-1">
+          <i data-lucide="graduation-cap" class="w-3.5 h-3.5"></i>
+          <span>${displayData.school} ${displayData.department || ''}</span>
+        </p>
+        ${displayData.titles && displayData.titles.length > 0 ? `
+          <div class="mt-2 flex flex-wrap justify-center gap-1.5">
+            ${displayData.titles.map(tVal => `<span class="px-3 py-1 rounded-full bg-indigo-950/80 border border-indigo-700/60 text-xs font-medium text-indigo-200">${tVal}</span>`).join('')}
+          </div>
+        ` : ''}
+        <p class="text-slate-300 text-xs leading-relaxed mt-4 px-2 font-light text-center">${displayData.bio || 'Welcome to my digital profile!'}</p>
+      </div>
+
+      <div class="space-y-3 pt-2">
+        ${displayData.experiences && displayData.experiences.length > 0 ? `
+          <div class="block-card p-3.5 rounded-2xl space-y-2">
+            <div class="flex items-center gap-2 mb-1">
+              <div class="w-6 h-6 rounded-lg bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-cyan-300">
+                <i data-lucide="briefcase" class="w-3.5 h-3.5"></i>
+              </div>
+              <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Experience</p>
+            </div>
+            <div class="space-y-1.5 pl-1">
+              ${displayData.experiences.map(exp => `
+                <div class="flex items-start gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 mt-1.5 shrink-0"></span>
+                  <p class="text-xs font-semibold text-white leading-relaxed">${exp}</p>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        ${skillsArray.length > 0 ? `
+          <div class="block-card p-3.5 rounded-2xl">
+            <div class="flex items-center gap-2 mb-2">
+              <div class="w-6 h-6 rounded-lg bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-indigo-300">
+                <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
+              </div>
+              <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Skills & Expertise</p>
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              ${skillsArray.map(skill => `<span class="px-2.5 py-1 bg-indigo-950/90 border border-indigo-800/60 text-cyan-300 rounded-lg text-[11px] font-mono">${skill}</span>`).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        ${email ? `
+          <a href="mailto:${email}" class="block-card p-3.5 rounded-2xl flex items-center justify-between group">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-pink-400">
+                <i data-lucide="mail" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Email</p>
+                <p class="text-xs font-semibold text-white">${email}</p>
+              </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500 group-hover:text-cyan-400 transition-colors"></i>
+          </a>
+        ` : ''}
+
+        ${portfolio ? `
+          <a href="${portfolio}" target="_blank" class="block-card p-3.5 rounded-2xl flex items-center justify-between group">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-cyan-400">
+                <i data-lucide="globe" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Official Website / Portfolio</p>
+                <p class="text-xs font-semibold text-white truncate max-w-[200px]">${portfolio.replace('https://', '').replace('http://', '')}</p>
+              </div>
+            </div>
+            <i data-lucide="external-link" class="w-4 h-4 text-slate-500 group-hover:text-cyan-400 transition-colors"></i>
+          </a>
+        ` : ''}
+
+        <div class="grid grid-cols-3 gap-2 pt-1">
+          ${instagram ? `<a href="https://instagram.com/${instagram}" target="_blank" class="block-card p-3 rounded-xl flex flex-col items-center justify-center text-slate-300 hover:text-pink-400"><i data-lucide="instagram" class="w-5 h-5 mb-1"></i><span class="text-[10px] font-mono">Instagram</span></a>` : ''}
+          ${linkedin ? `<a href="${linkedin}" target="_blank" class="block-card p-3 rounded-xl flex flex-col items-center justify-center text-slate-300 hover:text-blue-400"><i data-lucide="linkedin" class="w-5 h-5 mb-1"></i><span class="text-[10px] font-mono">LinkedIn</span></a>` : ''}
+          ${github ? `<a href="https://github.com/${github}" target="_blank" class="block-card p-3 rounded-xl flex flex-col items-center justify-center text-slate-300 hover:text-purple-400"><i data-lucide="github" class="w-5 h-5 mb-1"></i><span class="text-[10px] font-mono">GitHub</span></a>` : ''}
+        </div>
+      </div>
+
+      <div class="pt-3">
+        <button onclick="promptEditWithPin()" class="w-full py-2.5 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/50 text-cyan-300 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-lg">
+          <i data-lucide="edit-3" class="w-4 h-4"></i> ${t('editCardBtn')}
+        </button>
+      </div>
+
+      <footer class="text-center pt-2">
+        <p class="text-[10px] font-mono text-slate-600">POWERED BY NTU AI SOCIETY • NFC CARD</p>
+      </footer>
+    </div>
+  `;
+  if (window.lucide) lucide.createIcons();
 }
 
 function renderForm(id, container, existingData = null) {
@@ -275,7 +481,6 @@ function renderForm(id, container, existingData = null) {
         </div>
       </div>
 
-      <!-- 動態多筆社團職位 -->
       <div class="space-y-2 pt-1">
         <div class="flex items-center justify-between">
           <label class="block text-xs font-medium text-indigo-200">${t('titleLabel')}</label>
@@ -295,7 +500,6 @@ function renderForm(id, container, existingData = null) {
         </div>
       </div>
 
-      <!-- 動態多筆經歷 -->
       <div class="space-y-2 pt-1">
         <div class="flex items-center justify-between">
           <label class="block text-xs font-medium text-indigo-200">${t('expLabel')}</label>
@@ -439,7 +643,6 @@ async function generateGeminiBio() {
       throw new Error('API request failed');
     }
   } catch (e) {
-    // 降級純在地動態生成雙語文案
     if (currentLang === 'en') {
       let fallbackBio = `Hi, I'm ${name} from ${school}${dept ? ' (' + dept + ')' : ''}.`;
       if (title) fallbackBio += ` Currently serving as ${title}.`;
@@ -460,164 +663,6 @@ async function generateGeminiBio() {
     btn.classList.remove('opacity-50', 'cursor-not-allowed');
     btnText.innerText = t('aiBtn');
   }
-}
-
-function renderCard(data, container) {
-  const name_zh = decryptData(data.name_zh, PUBLIC_SYS_KEY);
-  const name_en = decryptData(data.name_en, PUBLIC_SYS_KEY);
-  const school = decryptData(data.school, PUBLIC_SYS_KEY);
-  const department = decryptData(data.department, PUBLIC_SYS_KEY);
-  const email = decryptData(data.email, PUBLIC_SYS_KEY);
-  
-  let titlesArray = [];
-  try {
-    const rawTitle = decryptData(data.title, PUBLIC_SYS_KEY);
-    titlesArray = JSON.parse(rawTitle);
-    if (!Array.isArray(titlesArray)) titlesArray = [rawTitle];
-  } catch (e) {
-    const rawTitle = decryptData(data.title, PUBLIC_SYS_KEY);
-    if (rawTitle) titlesArray = [rawTitle];
-  }
-
-  let experiencesArray = [];
-  try {
-    const rawExp = decryptData(data.experience, PUBLIC_SYS_KEY);
-    experiencesArray = JSON.parse(rawExp);
-    if (!Array.isArray(experiencesArray)) experiencesArray = [rawExp];
-  } catch (e) {
-    const rawExp = decryptData(data.experience, PUBLIC_SYS_KEY);
-    if (rawExp) experiencesArray = [rawExp];
-  }
-
-  const skills = decryptData(data.skills, PUBLIC_SYS_KEY);
-  const instagram = decryptData(data.instagram, PUBLIC_SYS_KEY);
-  const linkedin = decryptData(data.linkedin, PUBLIC_SYS_KEY);
-  const github = decryptData(data.github, PUBLIC_SYS_KEY);
-  const portfolio = decryptData(data.portfolio, PUBLIC_SYS_KEY);
-  const bio = decryptData(data.bio, PUBLIC_SYS_KEY);
-  const avatarSeed = decryptData(data.avatar_url, PUBLIC_SYS_KEY) || name_zh || 'ntu';
-  const avatarUrl = getAvatarUrl(avatarSeed);
-  const skillsArray = skills ? skills.split(',').map(s => s.trim()).filter(Boolean) : [];
-
-  container.innerHTML = `
-    <div class="space-y-5">
-      <div class="flex items-center justify-between border-b border-indigo-500/20 pb-3">
-        <div class="flex items-center gap-1.5">
-          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span class="text-[10px] font-mono text-cyan-400 tracking-widest uppercase">NTU AI PORTFOLIO</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <button type="button" onclick="toggleLanguage()" class="text-[10px] font-mono bg-indigo-950/80 hover:bg-indigo-900 border border-cyan-500/40 text-cyan-300 px-2 py-0.5 rounded-full transition-all">
-            ${currentLang === 'zh' ? 'EN' : '繁中'}
-          </button>
-          <span class="text-[10px] font-mono text-slate-500">#${data.card_id}</span>
-        </div>
-      </div>
-
-      <div class="text-center pt-2 pb-2">
-        <div class="relative inline-block mb-3">
-          <div class="absolute -inset-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-cyan-400 rounded-full blur opacity-50"></div>
-          <div class="relative w-24 h-24 rounded-full bg-slate-900 border-2 border-cyan-400/80 p-1 shadow-2xl overflow-hidden mx-auto">
-            <img src="${avatarUrl}" class="w-full h-full object-cover rounded-full" alt="Avatar">
-          </div>
-        </div>
-        <h1 class="text-2xl font-black text-white tracking-tight">${name_zh}</h1>
-        ${name_en ? `<p class="text-xs font-mono text-indigo-300 font-medium mt-0.5">${name_en}</p>` : ''}
-        <p class="text-cyan-400 text-xs font-semibold mt-1.5 flex items-center justify-center gap-1">
-          <i data-lucide="graduation-cap" class="w-3.5 h-3.5"></i>
-          <span>${school} ${department || ''}</span>
-        </p>
-        ${titlesArray.length > 0 ? `
-          <div class="mt-2 flex flex-wrap justify-center gap-1.5">
-            ${titlesArray.map(tVal => `<span class="px-3 py-1 rounded-full bg-indigo-950/80 border border-indigo-700/60 text-xs font-medium text-indigo-200">${tVal}</span>`).join('')}
-          </div>
-        ` : ''}
-        <p class="text-slate-300 text-xs leading-relaxed mt-4 px-2 font-light text-center">${bio || 'Welcome to my digital profile!'}</p>
-      </div>
-
-      <div class="space-y-3 pt-2">
-        ${experiencesArray.length > 0 ? `
-          <div class="block-card p-3.5 rounded-2xl space-y-2">
-            <div class="flex items-center gap-2 mb-1">
-              <div class="w-6 h-6 rounded-lg bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-cyan-300">
-                <i data-lucide="briefcase" class="w-3.5 h-3.5"></i>
-              </div>
-              <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Experience</p>
-            </div>
-            <div class="space-y-1.5 pl-1">
-              ${experiencesArray.map(exp => `
-                <div class="flex items-start gap-2">
-                  <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 mt-1.5 shrink-0"></span>
-                  <p class="text-xs font-semibold text-white leading-relaxed">${exp}</p>
-                </div>
-              `).join('')}
-            </div>
-          </div>
-        ` : ''}
-
-        ${skillsArray.length > 0 ? `
-          <div class="block-card p-3.5 rounded-2xl">
-            <div class="flex items-center gap-2 mb-2">
-              <div class="w-6 h-6 rounded-lg bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-indigo-300">
-                <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
-              </div>
-              <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Skills & Expertise</p>
-            </div>
-            <div class="flex flex-wrap gap-1.5">
-              ${skillsArray.map(skill => `<span class="px-2.5 py-1 bg-indigo-950/90 border border-indigo-800/60 text-cyan-300 rounded-lg text-[11px] font-mono">${skill}</span>`).join('')}
-            </div>
-          </div>
-        ` : ''}
-
-        ${email ? `
-          <a href="mailto:${email}" class="block-card p-3.5 rounded-2xl flex items-center justify-between group">
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-pink-400">
-                <i data-lucide="mail" class="w-5 h-5"></i>
-              </div>
-              <div>
-                <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Email</p>
-                <p class="text-xs font-semibold text-white">${email}</p>
-              </div>
-            </div>
-            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500 group-hover:text-cyan-400 transition-colors"></i>
-          </a>
-        ` : ''}
-
-        ${portfolio ? `
-          <a href="${portfolio}" target="_blank" class="block-card p-3.5 rounded-2xl flex items-center justify-between group">
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-indigo-900/60 border border-indigo-700/60 flex items-center justify-center text-cyan-400">
-                <i data-lucide="globe" class="w-5 h-5"></i>
-              </div>
-              <div>
-                <p class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Official Website / Portfolio</p>
-                <p class="text-xs font-semibold text-white truncate max-w-[200px]">${portfolio.replace('https://', '').replace('http://', '')}</p>
-              </div>
-            </div>
-            <i data-lucide="external-link" class="w-4 h-4 text-slate-500 group-hover:text-cyan-400 transition-colors"></i>
-          </a>
-        ` : ''}
-
-        <div class="grid grid-cols-3 gap-2 pt-1">
-          ${instagram ? `<a href="https://instagram.com/${instagram}" target="_blank" class="block-card p-3 rounded-xl flex flex-col items-center justify-center text-slate-300 hover:text-pink-400"><i data-lucide="instagram" class="w-5 h-5 mb-1"></i><span class="text-[10px] font-mono">Instagram</span></a>` : ''}
-          ${linkedin ? `<a href="${linkedin}" target="_blank" class="block-card p-3 rounded-xl flex flex-col items-center justify-center text-slate-300 hover:text-blue-400"><i data-lucide="linkedin" class="w-5 h-5 mb-1"></i><span class="text-[10px] font-mono">LinkedIn</span></a>` : ''}
-          ${github ? `<a href="https://github.com/${github}" target="_blank" class="block-card p-3 rounded-xl flex flex-col items-center justify-center text-slate-300 hover:text-purple-400"><i data-lucide="github" class="w-5 h-5 mb-1"></i><span class="text-[10px] font-mono">GitHub</span></a>` : ''}
-        </div>
-      </div>
-
-      <div class="pt-3">
-        <button onclick="promptEditWithPin()" class="w-full py-2.5 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/50 text-cyan-300 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-lg">
-          <i data-lucide="edit-3" class="w-4 h-4"></i> ${t('editCardBtn')}
-        </button>
-      </div>
-
-      <footer class="text-center pt-2">
-        <p class="text-[10px] font-mono text-slate-600">POWERED BY NTU AI SOCIETY • NFC CARD</p>
-      </footer>
-    </div>
-  `;
-  if (window.lucide) lucide.createIcons();
 }
 
 function promptEditWithPin() {
