@@ -81,9 +81,10 @@ const i18n = {
     githubPlaceholder: "GitHub 帳號",
     portfolioPlaceholder: "個人作品集 / 官網網址",
     aboutLabel: "About Me (故事簡介)",
-    aiBtn: "✨ 依經歷生成",
+    aiBtn: "✨ 依經歷生成簡介",
     aiGenerating: "生成中...",
-    bioPlaceholder: "填寫經歷後點擊生成...",
+    bioLoadingText: "⚡ 正在根據您的經歷生成個人簡介...",
+    bioPlaceholder: "填寫經歷後點擊「依經歷生成簡介」...",
     submitBtn: "發布電子名片 ！",
     submitting: "正在加密並發布...",
     editCardBtn: "✏️ 編輯電子名片",
@@ -125,7 +126,8 @@ const i18n = {
     aboutLabel: "About Me (Bio)",
     aiBtn: "✨ Generate Bio",
     aiGenerating: "Generating...",
-    bioPlaceholder: "Fill experiences then click generate...",
+    bioLoadingText: "⚡ Generating AI profile bio...",
+    bioPlaceholder: "Fill experiences then click 'Generate Bio'...",
     submitBtn: "Publish E-Card !",
     submitting: "Encrypting & Publishing...",
     editCardBtn: "✏️ Edit E-Card",
@@ -402,24 +404,27 @@ async function generateGeminiBio() {
   const btn = document.getElementById('geminiBtn');
   const btnText = document.getElementById('geminiBtnText');
   
-  const name = document.getElementById('name_zh').value || 'Member';
-  const school = document.getElementById('school').value || 'NTU';
+  const nameZh = document.getElementById('name_zh').value || '';
+  const nameEn = document.getElementById('name_en').value || '';
+  const name = currentLang === 'en' ? (nameEn || nameZh || 'Member') : (nameZh || nameEn || '成員');
+  
+  const school = document.getElementById('school').value || (currentLang === 'en' ? 'NTU' : '臺灣大學');
   const dept = document.getElementById('department').value || '';
   
   const titleInputs = document.querySelectorAll('.title-input');
   const titleArray = Array.from(titleInputs).map(i => i.value.trim()).filter(Boolean);
-  const title = titleArray.join('、');
+  const title = titleArray.join(', ');
   
   const expInputs = document.querySelectorAll('.exp-input');
   const expArray = Array.from(expInputs).map(i => i.value.trim()).filter(Boolean);
-  const exp = expArray.join('、');
+  const exp = expArray.join(', ');
   
   const skills = document.getElementById('skills').value || '';
 
   btn.disabled = true;
   btn.classList.add('opacity-50', 'cursor-not-allowed');
   btnText.innerText = t('aiGenerating');
-  bioInput.value = "⚡ Generating bio...";
+  bioInput.value = t('bioLoadingText');
 
   try {
     const response = await fetch('/api/generate-bio', {
@@ -434,12 +439,22 @@ async function generateGeminiBio() {
       throw new Error('API request failed');
     }
   } catch (e) {
-    let fallbackBio = `我是來自 ${school}${dept ? ' ' + dept : ''} 的 ${name}。`;
-    if (title) fallbackBio += `目前擔任 ${title}。`;
-    if (exp) fallbackBio += `專注於 ${exp} 等領域的實踐與探索，`;
-    if (skills) fallbackBio += `並具備 ${skills} 等核心能力。`;
-    fallbackBio += `熱衷於持續學習與跨領域挑戰！`;
-    bioInput.value = fallbackBio;
+    // 降級純在地動態生成雙語文案
+    if (currentLang === 'en') {
+      let fallbackBio = `Hi, I'm ${name} from ${school}${dept ? ' (' + dept + ')' : ''}.`;
+      if (title) fallbackBio += ` Currently serving as ${title}.`;
+      if (exp) fallbackBio += ` Focused on ${exp}.`;
+      if (skills) fallbackBio += ` Skilled in ${skills}.`;
+      fallbackBio += ` Passionate about continuous learning and innovation!`;
+      bioInput.value = fallbackBio;
+    } else {
+      let fallbackBio = `我是來自 ${school}${dept ? ' ' + dept : ''} 的 ${name}。`;
+      if (title) fallbackBio += `目前擔任 ${title}。`;
+      if (exp) fallbackBio += `專注於 ${exp} 等領域的實踐與探索，`;
+      if (skills) fallbackBio += `並具備 ${skills} 等核心能力。`;
+      fallbackBio += `熱衷於持續學習與跨領域挑戰！`;
+      bioInput.value = fallbackBio;
+    }
   } finally {
     btn.disabled = false;
     btn.classList.remove('opacity-50', 'cursor-not-allowed');
