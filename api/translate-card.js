@@ -23,7 +23,7 @@ module.exports = async function handler(req, res) {
     const promptText = `Translate all text values in this JSON to ${targetLang === 'en' ? 'English' : 'Traditional Chinese'}. Keep JSON structure and keys intact. Return ONLY raw JSON:\n${JSON.stringify(data)}`;
 
     // 2. 發送 API 請求
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
