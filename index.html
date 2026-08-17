@@ -591,7 +591,7 @@ async function saveCard(e) {
     const { error } = await supabaseClient.from('cards').upsert(cardData);
     if (error) {
       alert('儲存失敗：' + error.message);
-      submitBtn.innerText = '發布電子名片 ！';
+      submitBtn.innerText = '發佈電子名片 ！';
       submitBtn.disabled = false;
       return;
     }
