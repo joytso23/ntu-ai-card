@@ -49,6 +49,7 @@
 
     let supabaseClient = null;
     let currentAvatarSeed = 'ntu-ai';
+    let currentGender = 'male'; // 'male' or 'female'
     let currentCardData = null;
 
     // AES 加密與解密工具
@@ -114,6 +115,13 @@
       }
     }
 
+    function getAvatarUrl(seed, gender) {
+      if (seed.startsWith('http')) return seed;
+      // 使用支援男女風格的向量頭像 API
+      const style = gender === 'female' ? 'lorelei' : 'bottts-neutral';
+      return `https://api.dicebear.com/7.x/${style}/svg?seed=${encodeURIComponent(seed)}`;
+    }
+
     function renderForm(id, container, existingData = null) {
       if (existingData && existingData.avatar_url) {
         currentAvatarSeed = existingData.avatar_url;
@@ -121,13 +129,15 @@
         currentAvatarSeed = `ntu-${id}-${Math.floor(Math.random() * 1000)}`;
       }
 
-      const avatarUrl = currentAvatarSeed.startsWith('http') 
-        ? currentAvatarSeed 
-        : `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(currentAvatarSeed)}`;
+      const avatarUrl = getAvatarUrl(currentAvatarSeed, currentGender);
 
-      // 處理多筆經歷列表
+      // 處理多筆經歷與多筆社團職位列表
       const experiences = existingData && existingData.experiences && existingData.experiences.length > 0 
         ? existingData.experiences 
+        : [''];
+
+      const titles = existingData && existingData.titles && existingData.titles.length > 0 
+        ? existingData.titles 
         : [''];
 
       container.innerHTML = `
@@ -139,12 +149,19 @@
         
         <form onsubmit="saveCard(event)" class="space-y-4">
           
+          <!-- 頭像選擇區塊 -->
           <div class="flex flex-col items-center justify-center mb-2">
             <div class="relative w-20 h-20 rounded-full bg-slate-900 border-2 border-cyan-400 p-1 mb-2 shadow-lg shadow-cyan-500/20">
               <img id="avatarPreview" src="${avatarUrl}" class="w-full h-full object-cover rounded-full" alt="Avatar">
             </div>
+            
+            <div class="flex items-center gap-2 mb-2">
+              <button type="button" onclick="setGender('male')" id="btnMale" class="text-[11px] px-2.5 py-0.5 rounded-full border transition-all ${currentGender === 'male' ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300' : 'border-slate-700 text-slate-400'}">👨 男生風格</button>
+              <button type="button" onclick="setGender('female')" id="btnFemale" class="text-[11px] px-2.5 py-0.5 rounded-full border transition-all ${currentGender === 'female' ? 'bg-pink-500/20 border-pink-400 text-pink-300' : 'border-slate-700 text-slate-400'}">👩 女生風格</button>
+            </div>
+
             <button type="button" onclick="randomizeAvatar()" class="text-xs text-cyan-300 flex items-center gap-1 bg-indigo-950/80 hover:bg-indigo-900 px-3 py-1 rounded-full border border-indigo-700/50">
-              <i data-lucide="refresh-cw" class="w-3 h-3"></i> 換個頭像
+              <i data-lucide="refresh-cw" class="w-3 h-3"></i> 換個造型/表情
             </button>
           </div>
 
@@ -177,9 +194,24 @@
             </div>
           </div>
 
-          <div>
-            <label class="block text-xs font-medium text-indigo-200 mb-1">社團職位 / 身份標籤</label>
-            <input type="text" id="title" value="${existingData?.title || ''}" placeholder="專案負責人 / 行銷部長" class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+          <!-- 動態多筆社團職位區域 -->
+          <div class="space-y-2 pt-1">
+            <div class="flex items-center justify-between">
+              <label class="block text-xs font-medium text-indigo-200">社團職位 / 身份標籤</label>
+              <button type="button" onclick="addTitleInput()" class="text-[11px] text-cyan-300 font-semibold flex items-center gap-1 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/50 px-2.5 py-1 rounded-lg transition-all">
+                <i data-lucide="plus" class="w-3.5 h-3.5 text-cyan-400"></i> 新增職位
+              </button>
+            </div>
+            <div id="titleContainer" class="space-y-2">
+              ${titles.map(t => `
+                <div class="flex items-center gap-2 title-item">
+                  <input type="text" value="${t}" placeholder="例：NTU AI 社長 / 區塊鏈社 技術部長" class="title-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+                  <button type="button" onclick="removeTitleInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              `).join('')}
+            </div>
           </div>
 
           <!-- 動態多筆經歷新增區域 -->
@@ -187,7 +219,7 @@
             <div class="flex items-center justify-between">
               <label class="block text-xs font-medium text-indigo-200">重要經歷 / 專案亮點</label>
               <button type="button" onclick="addExperienceInput()" class="text-[11px] text-cyan-300 font-semibold flex items-center gap-1 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/50 px-2.5 py-1 rounded-lg transition-all">
-                <i data-lucide="plus" class="w-3.5 h-3.5 text-cyan-400"></i> 新增一項經歷
+                <i data-lucide="plus" class="w-3.5 h-3.5 text-cyan-400"></i> 新增經歷
               </button>
             </div>
             <div id="experienceContainer" class="space-y-2">
@@ -235,6 +267,38 @@
       if (window.lucide) lucide.createIcons();
     }
 
+    // 切換男女風格
+    function setGender(gender) {
+      currentGender = gender;
+      document.getElementById('btnMale').className = `text-[11px] px-2.5 py-0.5 rounded-full border transition-all ${gender === 'male' ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300' : 'border-slate-700 text-slate-400'}`;
+      document.getElementById('btnFemale').className = `text-[11px] px-2.5 py-0.5 rounded-full border transition-all ${gender === 'female' ? 'bg-pink-500/20 border-pink-400 text-pink-300' : 'border-slate-700 text-slate-400'}`;
+      document.getElementById('avatarPreview').src = getAvatarUrl(currentAvatarSeed, currentGender);
+    }
+
+    // 新增一格職位欄位
+    function addTitleInput() {
+      const container = document.getElementById('titleContainer');
+      const div = document.createElement('div');
+      div.className = 'flex items-center gap-2 title-item';
+      div.innerHTML = `
+        <input type="text" placeholder="例：NTU AI 社長 / 區塊鏈社 技術部長" class="title-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+        <button type="button" onclick="removeTitleInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+        </button>
+      `;
+      container.appendChild(div);
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function removeTitleInput(btn) {
+      const container = document.getElementById('titleContainer');
+      if (container.children.length > 1) {
+        btn.closest('.title-item').remove();
+      } else {
+        btn.closest('.title-item').querySelector('input').value = '';
+      }
+    }
+
     // 新增一格經歷輸入欄位
     function addExperienceInput() {
       const container = document.getElementById('experienceContainer');
@@ -250,7 +314,6 @@
       if (window.lucide) lucide.createIcons();
     }
 
-    // 刪除該格經歷輸入欄位
     function removeExperienceInput(btn) {
       const container = document.getElementById('experienceContainer');
       if (container.children.length > 1) {
@@ -262,7 +325,7 @@
 
     function randomizeAvatar() {
       currentAvatarSeed = `seed-${Math.random().toString(36).substring(7)}`;
-      document.getElementById('avatarPreview').src = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(currentAvatarSeed)}`;
+      document.getElementById('avatarPreview').src = getAvatarUrl(currentAvatarSeed, currentGender);
     }
 
     async function generateGeminiBio() {
@@ -273,7 +336,10 @@
       const name = document.getElementById('name_zh').value || '社團成員';
       const school = document.getElementById('school').value || '國立臺灣大學';
       const dept = document.getElementById('department').value || '';
-      const title = document.getElementById('title').value || '';
+      
+      const titleInputs = document.querySelectorAll('.title-input');
+      const titleArray = Array.from(titleInputs).map(i => i.value.trim()).filter(Boolean);
+      const title = titleArray.join('、');
       
       const expInputs = document.querySelectorAll('.exp-input');
       const expArray = Array.from(expInputs).map(i => i.value.trim()).filter(Boolean);
@@ -321,10 +387,20 @@
       const name_en = decryptData(data.name_en, PUBLIC_SYS_KEY);
       const school = decryptData(data.school, PUBLIC_SYS_KEY);
       const department = decryptData(data.department, PUBLIC_SYS_KEY);
-      const title = decryptData(data.title, PUBLIC_SYS_KEY);
       const email = decryptData(data.email, PUBLIC_SYS_KEY);
       
-      // 解密並解析多筆經歷 JSON
+      // 解密社團職位 JSON
+      let titlesArray = [];
+      try {
+        const rawTitle = decryptData(data.title, PUBLIC_SYS_KEY);
+        titlesArray = JSON.parse(rawTitle);
+        if (!Array.isArray(titlesArray)) titlesArray = [rawTitle];
+      } catch (e) {
+        const rawTitle = decryptData(data.title, PUBLIC_SYS_KEY);
+        if (rawTitle) titlesArray = [rawTitle];
+      }
+
+      // 解密專案經歷 JSON
       let experiencesArray = [];
       try {
         const rawExp = decryptData(data.experience, PUBLIC_SYS_KEY);
@@ -343,9 +419,7 @@
       const bio = decryptData(data.bio, PUBLIC_SYS_KEY);
       
       const avatarSeed = decryptData(data.avatar_url, PUBLIC_SYS_KEY) || name_zh || 'ntu';
-      const avatarUrl = avatarSeed.startsWith('http') 
-        ? avatarSeed 
-        : `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(avatarSeed)}`;
+      const avatarUrl = getAvatarUrl(avatarSeed, currentGender);
 
       const skillsArray = skills ? skills.split(',').map(s => s.trim()).filter(Boolean) : [];
 
@@ -375,7 +449,11 @@
               <span>${school} ${department || ''}</span>
             </p>
 
-            ${title ? `<div class="mt-2 inline-block px-3 py-1 rounded-full bg-indigo-950/80 border border-indigo-700/60 text-xs font-medium text-indigo-200">${title}</div>` : ''}
+            ${titlesArray.length > 0 ? `
+              <div class="mt-2 flex flex-wrap justify-center gap-1.5">
+                ${titlesArray.map(t => `<span class="px-3 py-1 rounded-full bg-indigo-950/80 border border-indigo-700/60 text-xs font-medium text-indigo-200">${t}</span>`).join('')}
+              </div>
+            ` : ''}
 
             <p class="text-slate-300 text-xs leading-relaxed mt-4 px-2 font-light text-center">${bio || '觀看我的電子名片！'}</p>
           </div>
@@ -466,7 +544,6 @@
       if (window.lucide) lucide.createIcons();
     }
 
-    // 點擊編輯按鈕：輸入 PIN 碼進行驗證
     function promptEditWithPin() {
       const pin = prompt('🔐 請輸入建立名片時設定的 PIN 碼以進行編輯：');
       if (!pin) return;
@@ -477,7 +554,16 @@
         return;
       }
 
-      // 驗證成功，解密並帶入表單
+      // 驗證成功，解密職位與經歷陣列
+      let titlesArray = [];
+      try {
+        const rawTitle = decryptData(currentCardData.title, PUBLIC_SYS_KEY);
+        titlesArray = JSON.parse(rawTitle);
+      } catch (e) {
+        const rawTitle = decryptData(currentCardData.title, PUBLIC_SYS_KEY);
+        if (rawTitle) titlesArray = [rawTitle];
+      }
+
       let experiencesArray = [];
       try {
         const rawExp = decryptData(currentCardData.experience, PUBLIC_SYS_KEY);
@@ -494,7 +580,7 @@
         name_en: decryptData(currentCardData.name_en, PUBLIC_SYS_KEY),
         school: decryptData(currentCardData.school, PUBLIC_SYS_KEY),
         department: decryptData(currentCardData.department, PUBLIC_SYS_KEY),
-        title: decryptData(currentCardData.title, PUBLIC_SYS_KEY),
+        titles: titlesArray,
         experiences: experiencesArray,
         skills: decryptData(currentCardData.skills, PUBLIC_SYS_KEY),
         email: decryptData(currentCardData.email, PUBLIC_SYS_KEY),
@@ -525,7 +611,10 @@
       let cardId = pathSegments[pathSegments.length - 1] || '001';
       if (cardId === 'c' || !cardId) cardId = '001';
 
-      // 收集多筆經歷資料
+      // 收集多筆職位與多筆經歷資料
+      const titleInputs = document.querySelectorAll('.title-input');
+      const titlesArray = Array.from(titleInputs).map(i => i.value.trim()).filter(Boolean);
+
       const expInputs = document.querySelectorAll('.exp-input');
       const experiencesArray = Array.from(expInputs).map(i => i.value.trim()).filter(Boolean);
 
@@ -538,7 +627,7 @@
         name_en: encryptData(document.getElementById('name_en').value, PUBLIC_SYS_KEY),
         school: encryptData(document.getElementById('school').value, PUBLIC_SYS_KEY),
         department: encryptData(document.getElementById('department').value, PUBLIC_SYS_KEY),
-        title: encryptData(document.getElementById('title').value, PUBLIC_SYS_KEY),
+        title: encryptData(JSON.stringify(titlesArray), PUBLIC_SYS_KEY),
         experience: encryptData(JSON.stringify(experiencesArray), PUBLIC_SYS_KEY),
         skills: encryptData(document.getElementById('skills').value, PUBLIC_SYS_KEY),
         email: encryptData(document.getElementById('email').value, PUBLIC_SYS_KEY),
@@ -554,7 +643,7 @@
         const { error } = await supabaseClient.from('cards').upsert(cardData);
         if (error) {
           alert('儲存失敗：' + error.message);
-          submitBtn.innerText = '🚀 加密並發佈個人網站';
+          submitBtn.innerText = '🚀 發佈電子名片';
           submitBtn.disabled = false;
           return;
         }
