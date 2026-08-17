@@ -337,7 +337,7 @@ async function generateGeminiBio() {
     if (skills) fallbackBio += `並具備 ${skills} 等核心能力。`;
     fallbackBio += `熱衷於持續學習與跨領域挑戰，探索更多創新的可能性！`;
     bioInput.value = fallbackBio;
-  } fontally {
+  } finally {
     btn.disabled = false;
     btn.classList.remove('opacity-50', 'cursor-not-allowed');
     btnText.innerText = "✨ 依經歷生成";
