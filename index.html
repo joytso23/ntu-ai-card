@@ -236,7 +236,7 @@ function renderForm(id, container, existingData = null) {
       </div>
 
       <button type="submit" id="submitBtn" class="w-full py-3.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-500 hover:opacity-95 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 mt-4 transition-all">
-        🚀 加密並發佈個人網站
+        發布電子名片 ！
       </button>
     </form>
   `;
@@ -248,7 +248,7 @@ function addTitleInput() {
   const div = document.createElement('div');
   div.className = 'flex items-center gap-2 title-item';
   div.innerHTML = `
-    <input type="text" placeholder="例：NTU AI 社長 / 區塊鏈社 技術部長" class="title-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+    <input type="text" value="NTU AI/社長" placeholder="例：NTU AI/社長" class="title-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
     <button type="button" onclick="removeTitleInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
       <i data-lucide="trash-2" class="w-4 h-4"></i>
     </button>
@@ -271,7 +271,7 @@ function addExperienceInput() {
   const div = document.createElement('div');
   div.className = 'flex items-center gap-2 exp-item';
   div.innerHTML = `
-    <input type="text" placeholder="例：台積電實習生 / ATCC 決賽團隊" class="exp-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+    <input type="text" value="台積電 軟體實習工程師" placeholder="例：台積電 軟體實習工程師" class="exp-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
     <button type="button" onclick="removeExperienceInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
       <i data-lucide="trash-2" class="w-4 h-4"></i>
     </button>
@@ -591,7 +591,7 @@ async function saveCard(e) {
     const { error } = await supabaseClient.from('cards').upsert(cardData);
     if (error) {
       alert('儲存失敗：' + error.message);
-      submitBtn.innerText = '🚀 發佈電子名片';
+      submitBtn.innerText = '發布電子名片 ！';
       submitBtn.disabled = false;
       return;
     }
