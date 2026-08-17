@@ -115,12 +115,12 @@
       }
     }
 
-    function getAvatarUrl(seed, gender) {
-      if (seed.startsWith('http')) return seed;
-      // 使用支援男女風格的向量頭像 API
-      const style = gender === 'female' ? 'lorelei' : 'bottts-neutral';
-      return `https://api.dicebear.com/7.x/${style}/svg?seed=${encodeURIComponent(seed)}`;
-    }
+function getAvatarUrl(seed, gender) {
+  if (seed.startsWith('http')) return seed;
+  // 統一使用 avataaars 或 lorelei，男女生皆為完整人類造型
+  const style = 'avataaars'; 
+  return `https://api.dicebear.com/7.x/${style}/svg?seed=${encodeURIComponent(seed)}&gender=${gender === 'female' ? 'female' : 'male'}`;
+}
 
     function renderForm(id, container, existingData = null) {
       if (existingData && existingData.avatar_url) {
@@ -205,7 +205,7 @@
             <div id="titleContainer" class="space-y-2">
               ${titles.map(t => `
                 <div class="flex items-center gap-2 title-item">
-                  <input type="text" value="${t}" placeholder="例：NTU AI 社長 / 區塊鏈社 技術部長" class="title-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+                  <input type="text" value="${t}" placeholder="例：NTU AI/社長" class="title-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
                   <button type="button" onclick="removeTitleInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
                     <i data-lucide="trash-2" class="w-4 h-4"></i>
                   </button>
@@ -225,7 +225,7 @@
             <div id="experienceContainer" class="space-y-2">
               ${experiences.map(exp => `
                 <div class="flex items-center gap-2 exp-item">
-                  <input type="text" value="${exp}" placeholder="例：台積電實習生 / ATCC 決賽團隊" class="exp-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+                  <input type="text" value="${exp}" placeholder="例：台積電 軟體實習工程師" class="exp-input w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
                   <button type="button" onclick="removeExperienceInput(this)" class="p-2 text-slate-400 hover:text-pink-400 bg-slate-900 rounded-xl border border-slate-800">
                     <i data-lucide="trash-2" class="w-4 h-4"></i>
                   </button>
